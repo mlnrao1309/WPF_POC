@@ -1,0 +1,102 @@
+<Window x:Class="AlgoTrading.MarketWatchWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:behaviors="clr-namespace:AlgoTrading.Behaviors"
+        xmlns:vm="clr-namespace:AlgoTrading.ViewModels"
+        mc:Ignorable="d"
+        Title="Market Watch" Width="760" Height="560" MinWidth="600" MinHeight="420"
+        ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <!-- ... rest identical to your file ... -->
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <TextBlock Grid.Row="0" Margin="0,0,0,6" Text="MarketWatch"/>
+        <ComboBox x:Name="ddlNames" Grid.Row="1" ItemsSource="{Binding MarketWatchNames}"
+                  SelectedItem="{Binding SelectedMarketWatch, Mode=TwoWay}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <StackPanel Orientation="Horizontal">
+                        <!-- Command-driven checkbox: renders IsChecked one-way and toggles via the
+                             item's ToggleCheckedCommand, so checking never selects the item. -->
+                        <CheckBox Margin="0,0,8,0" Focusable="False"
+                                  IsChecked="{Binding IsChecked, Mode=OneWay}"
+                                  Command="{Binding ToggleCheckedCommand}"/>
+                        <TextBlock VerticalAlignment="Center" Text="{Binding Name}"/>
+                    </StackPanel>
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Grid.Row="2" Margin="0,16,0,6" Text="Instruments"/>
+        <ListBox x:Name="lstInstruments" Grid.Row="3" ItemsSource="{Binding Instruments}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid Margin="2">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/><ColumnDefinition Width="160"/><ColumnDefinition Width="100"/>
+                            <ColumnDefinition Width="140"/><ColumnDefinition Width="80"/>
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" Margin="0,0,8,0" Focusable="False"
+                                  IsChecked="{Binding IsChecked, Mode=OneWay}"
+                                  Command="{Binding ToggleCheckedCommand}"/>
+                        <TextBlock Grid.Column="1" Text="{Binding TradingSymbol}"/>
+                        <TextBlock Grid.Column="2" Text="{Binding Exchange}"/>
+                        <TextBlock Grid.Column="3" Text="{Binding InstrumentType}"/>
+                        <TextBlock Grid.Column="4" Text="{Binding IsActive, StringFormat=Active: {0}}"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <ItemsControl Grid.Row="4" Margin="0,8,0,0" ItemsSource="{Binding HistoryCandleIntervals}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel/>
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <CheckBox Margin="0,0,12,4" Content="{Binding Interval}"
+                              IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <ProgressBar Grid.Row="5" Height="18" Margin="0,8,0,0" Minimum="0" Maximum="100"
+                     Value="{Binding HistoricalProgress}"/>
+        <TextBox Grid.Row="6" Height="100" Margin="0,8,0,0" IsReadOnly="True" AcceptsReturn="True"
+                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                 Text="{Binding HistoricalExecutionStatus, Mode=OneWay}" TextWrapping="NoWrap"/>
+        <TextBlock Grid.Row="7" Margin="0,8,0,0" Text="{Binding PollingStatus}"/>
+        <TextBlock Grid.Row="8" Margin="0,4,0,0" Foreground="Red" Text="{Binding ErrorMessage}"/>
+        <StackPanel Grid.Row="9" Margin="0,12,0,0" Orientation="Horizontal">
+            <TextBlock VerticalAlignment="Center" Text="From"/>
+            <DatePicker Width="130" Margin="6,0,6,0"
+                        SelectedDate="{Binding HistoricalFromDate, Mode=TwoWay}"/>
+            <TextBox Width="70" Margin="0,0,14,0" MaxLength="5" ToolTip="HH:mm"
+                     VerticalContentAlignment="Center"
+                     Text="{Binding HistoricalFromTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+            <TextBlock VerticalAlignment="Center" Text="To"/>
+            <DatePicker Width="130" Margin="6,0,6,0"
+                        SelectedDate="{Binding HistoricalToDate, Mode=TwoWay}"/>
+            <TextBox Width="70" MaxLength="5" ToolTip="HH:mm" VerticalContentAlignment="Center"
+                     Text="{Binding HistoricalToTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+        </StackPanel>
+        <DockPanel Grid.Row="10" Margin="0,12,0,0" LastChildFill="False">
+            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                <Button MinWidth="80" Margin="0,0,8,0" Content="Poll" Command="{Binding PollCommand}"/>
+                <Button MinWidth="90" Margin="0,0,8,0" Content="Stop Polling" Command="{Binding StopPollingCommand}"/>
+                <Button MinWidth="120" Margin="0,0,8,0" Content="Fetch Historical" Command="{Binding FetchHistoricalCommand}"/>
+                <Button MinWidth="110" Content="Active/Inactive" Command="{Binding ActiveInactiveCommand}"/>
+            </StackPanel>
+            <Button x:Name="CloseButton" DockPanel.Dock="Right" MinWidth="80" Content="Close"
+                    Click="CloseButton_Click"/>
+        </DockPanel>
+    </Grid>
+</Window>

@@ -1,0 +1,18 @@
+# 1. Ignore absolutely everything
+*
+
+# 2. Allow directories so Git can search them
+!*/
+
+# 3. Explicitly block bin and obj folders completely
+bin/
+obj/
+
+# 4. Explicitly ALLOW your specific files and extensions
+!*.xaml
+!*.xaml.cs
+!*.cs
+!*.csproj
+!*.slnx
+!appsettings.json
+!.gitignore

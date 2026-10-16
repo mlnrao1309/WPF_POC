@@ -1,0 +1,17 @@
+﻿<Application x:Class="AlgoTrading.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:AlgoTrading"
+             >
+    <Application.Resources>
+        <!-- XAML pulls the resolved instance from the DI container via App.ServiceProvider -->
+        <ObjectDataProvider x:Key="VmLocator" 
+                            ObjectInstance="{x:Static local:App.ServiceProvider}" 
+                            MethodName="GetService">
+            <ObjectDataProvider.MethodParameters>
+                <!-- Pass the type of your ViewModel as a parameter -->
+                <x:Type TypeName="local:WebViewViewModel"/>
+            </ObjectDataProvider.MethodParameters>
+        </ObjectDataProvider>
+    </Application.Resources>
+</Application>

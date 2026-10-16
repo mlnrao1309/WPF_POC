@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="Stage1Scanner.Core/Stage1Scanner.Core.csproj" />
+  <Project Path="WPF_Main/AlgoTrading.csproj" />
+  <Project Path="AlgoTrading.DataAccess/AlgoTrading.DataAccess.csproj" />
+  <Project Path="AlgoTrading.Models/AlgoTrading.Models.csproj" />
+</Solution>

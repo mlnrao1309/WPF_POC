@@ -1,0 +1,86 @@
+<Window x:Class="AlgoTrading.Screener.Wpf.ScreenerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:scr="clr-namespace:AlgoTrading.Screener.Wpf"
+        Title="Screener"
+        Width="1100" Height="720"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="10">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <!-- filter row -->
+            <RowDefinition Height="Auto"/>
+            <!-- query toolbar (NEW) -->
+            <RowDefinition Height="Auto"/>
+            <!-- Query GroupBox -->
+            <RowDefinition Height="Auto"/>
+            <!-- Run button -->
+            <RowDefinition Height="*"/>
+            <!-- results grid -->
+        </Grid.RowDefinitions>
+
+        <!-- Parameter row -->
+        <WrapPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,8">
+            <TextBlock Text="Timeframe:" VerticalAlignment="Center"/>
+            <ComboBox x:Name="TimeframeBox" Width="100" Margin="6,0,14,0">
+                <ComboBoxItem Content="minute"/>
+                <ComboBoxItem Content="3minute"/>
+                <ComboBoxItem Content="5minute"/>
+                <ComboBoxItem Content="15minute"/>
+                <ComboBoxItem Content="day" IsSelected="True"/>
+                <ComboBoxItem Content="week"/>
+            </ComboBox>
+
+            <TextBlock Text="Screener Name:" VerticalAlignment="Center"/>
+            <TextBox x:Name="ScreenerNameBox" Width="260" Margin="6,0,14,0"/>
+        </WrapPanel>
+        <!-- Query toolbar: Saved / Templates / Save / Save As / Delete / Help -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,6">
+            <TextBlock Text="Query:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox x:Name="SavedQueriesBox"
+              Width="280"
+              DisplayMemberPath="Display"
+              SelectionChanged="SavedQueriesBox_SelectionChanged"/>
+            <Button x:Name="BrowseTemplateButton" Content="Browse" Width="70" Margin="6,0,0,0" Click="BrowseTemplateButton_Click"/>
+
+            <Button x:Name="SaveQueryButton"   Content="Save"      Width="60" Margin="6,0,0,0" Click="SaveQueryButton_Click"/>
+            <Button x:Name="SaveAsQueryButton" Content="Save As…"  Width="80" Margin="4,0,0,0" Click="SaveAsQueryButton_Click"/>
+            <Button x:Name="DeleteQueryButton" Content="Delete"    Width="60" Margin="4,0,0,0" Click="DeleteQueryButton_Click"/>
+            <Button x:Name="HelpButton"        Content="Help"      Width="60" Margin="4,0,0,0" Click="HelpButton_Click"/>
+        </StackPanel>
+        <!-- Query editor -->
+        <GroupBox Grid.Row="2" Header="Query" Margin="0,0,0,8">
+            <scr:ScreenerTextBox x:Name="QueryBox"
+                           MinHeight="200"
+                           FontFamily="Consolas"
+                           FontSize="13"
+                           Query="from s in Instruments&#10;let ema5   = EMA(s.Close, 5)&#10;let ema20  = EMA(ema5, 5)&#10;let xover  = ema5 crossedabove ema20&#10;let rsi    = RSI(s.Close, 14)&#10;let st     = SUPERTREND(s.High, s.Low, s.Close, 10, 3)&#10;where xover and (rsi between 61 and 70) and s.Close &gt; st&#10;select s.InstrumentToken, s.Symbol, s.Time, s.Close,&#10;       ema5 as Ema5, ema20 as Ema20, rsi, st&#10;per bar&#10;orderby s.Time desc"/>
+        </GroupBox>
+
+        <!-- Run row -->
+        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,0,0,8">
+            <Button x:Name="RunButton"
+              Content="Run (Ctrl+Enter)"
+              Width="150" Height="28"
+              Click="RunButton_Click"/>
+            <Button x:Name="BuildSaveButton" Content="Build and Save Screener" Width="180" Height="28" Margin="6,0,0,0" Click="BuildSaveButton_Click"/>
+            <TextBlock x:Name="StatusText"
+                 Margin="12,0,0,0"
+                 VerticalAlignment="Center"
+                 Foreground="Gray"
+                 Text="Idle"/>
+        </StackPanel>
+
+        <!-- Results -->
+        <DataGrid Grid.Row="4"
+              x:Name="ResultsGrid"
+              AutoGenerateColumns="True"
+              IsReadOnly="True"
+              CanUserAddRows="False"
+              CanUserDeleteRows="False"
+              CanUserResizeRows="False"
+              HeadersVisibility="Column"
+              GridLinesVisibility="Horizontal"
+              RowHeaderWidth="0"/>
+    </Grid>
+</Window>
