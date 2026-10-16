@@ -1,0 +1,31 @@
+name: WPF Build Workflow
+
+# Trigger the workflow every time someone pushes to the main branch
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    # 1. Download the code from the repository onto the runner
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    # 2. Set up the C#/.NET environment
+    - name: Setup .NET Core
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x' # Change this to match your project's .NET version (e.g., 6.0, 7.0, 8.0)
+
+    # 3. Restore missing external NuGet packages
+    - name: Restore Dependencies
+      run: dotnet restore
+
+    # 4. Compile the project to ensure there are no compilation errors
+    - name: Build Project
+      run: dotnet build --configuration Release --no-restore
