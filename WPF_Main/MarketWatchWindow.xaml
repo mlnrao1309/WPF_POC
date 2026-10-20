@@ -72,7 +72,7 @@
                      Value="{Binding HistoricalProgress}"/>
         <TextBox Grid.Row="6" Height="100" Margin="0,8,0,0" IsReadOnly="True" AcceptsReturn="True"
                  VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                 Text="{Binding HistoricalExecutionStatus, Mode=OneWay}" TextWrapping="NoWrap"/>
+                 Text="{Binding HistoricalExecutionStatus, Mode=OneWay}" TextWrapping="NoWrap" TextChanged="TextBox_TextChanged"/>
         <TextBlock Grid.Row="7" Margin="0,8,0,0" Text="{Binding PollingStatus}"/>
         <TextBlock Grid.Row="8" Margin="0,4,0,0" Foreground="Red" Text="{Binding ErrorMessage}"/>
         <StackPanel Grid.Row="9" Margin="0,12,0,0" Orientation="Horizontal">

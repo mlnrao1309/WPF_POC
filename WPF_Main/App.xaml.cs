@@ -2,6 +2,7 @@
 using AlgoTrading.DataAccess.Historical;
 using AlgoTrading.DataAccess.Infrastructure;
 using AlgoTrading.DataAccess.Infrastructure.DatabaseContext;
+using AlgoTrading.DataAccess.Repositories;
 using AlgoTrading.Models;
 using AlgoTrading.Repositories;
 using AlgoTrading.Screener.Dsl;
@@ -13,6 +14,9 @@ using AlgoTrading.ViewModels;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Win32;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Windows;
 
@@ -149,6 +153,12 @@ namespace AlgoTrading
                 // Background service (auto-expire / soft delete)
                 //services.AddHoster<MarketWatchExpiryService>();
             }
+            // Example inside App.xaml.cs service configuration
+            services.AddSingleton<IWarmupRepository>(provider =>
+            {   
+                return new WarmupRepository(connectionString);
+            });
+            services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
             services.AddScoped<IInstrumentImportService, InstrumentImportService>();
             _serviceProvider = services.BuildServiceProvider();
 
@@ -184,26 +194,53 @@ namespace AlgoTrading
                         "Market-data startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 }
             }
+
+            try
+            {
+                // Resolve the repository from your DI container
+                var warmupRepository = _serviceProvider.GetRequiredService<IWarmupRepository>();
+
+                // Step 1: Check for disqualified/stale instruments
+                //var disqualifiedInstruments = await warmupRepository.GetDisqualifiedInstrumentsAsync();
+
+                //if (disqualifiedInstruments.Any())
+                //{
+                //    int count = disqualifiedInstruments.Count();
+                //    var message = $"Found {count} disqualified or stale instrument(s). Do you want to proceed with the warmup sequence anyway?";
+
+                //    // WPF Confirmation Dialog
+                //    var result = MessageBox.Show(
+                //        message,
+                //        "Warmup Validation Warning",
+                //        MessageBoxButton.YesNo,
+                //        MessageBoxImage.Warning);
+
+                //    if (result == MessageBoxResult.No)
+                //    {
+                //        // Graceful abort
+                //        Shutdown();
+                //        return;
+                //    }
+                //}
+
+                // Step 2: Fetch the full warmup snapshot (e.g., 52 weeks of history)
+                short weeksNeeded = 30;
+                Debug.WriteLine($"Fetching warmup snapshot for the last {weeksNeeded} weeks... Started At {DateTime.Now}");
+                var activeInstruments = await warmupRepository.GetWarmupSnapshotAsync(weeksNeeded);
+                Debug.WriteLine($"Warmup snapshot fetched successfully. Count: {activeInstruments.Count}. Completed At {DateTime.Now}");
+                // Pass activeInstruments into your singleton state manager or strategy engine here...
+                var registry = _serviceProvider.GetRequiredService<IInstrumentRegistry>();
+                // Populate the singleton registry
+                registry.Initialize(activeInstruments.Values);
+
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Critical error during startup data ingestion: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown();
+            }
         }
 
-        //protected override async void OnStartup(StartupEventArgs e)
-        //{
-        //    await _host.StartAsync();
-        //    base.OnStartup(e);
-
-        //    // Optional: force DB to be reachable early so failures are visible.
-        //    using var scope = Services.CreateScope();
-        //    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        //    await db.Database.CanConnectAsync();
-        //}
-
-        //protected override async void OnExit(ExitEventArgs e)
-        //{
-        //    try { await _host.StopAsync(TimeSpan.FromSeconds(5)); }
-        //    finally { _host.Dispose(); }
-
-        //    base.OnExit(e);
-        //}
     }
 
 }

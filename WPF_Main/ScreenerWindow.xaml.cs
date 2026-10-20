@@ -217,10 +217,10 @@ public sealed partial class ScreenerWindow : Window
     }
 
     /// <summary>Flattens ScreenerRow.Values into real DataGrid columns.</summary>
-    private static DataTable ToTable(IReadOnlyList<ScreenerRow> rows)
+    private static DataTable ToTable(IReadOnlyList<ScreenerRow> rows1)
     {
         const int decimals = 4;
-
+        var rows = rows1.OrderByDescending(x => x.Symbol).ToList();
         static object RoundValue(object value) => value switch
         {
             decimal dec => Math.Round(dec, decimals, MidpointRounding.AwayFromZero),

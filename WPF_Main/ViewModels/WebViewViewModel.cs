@@ -48,8 +48,11 @@ namespace AlgoTrading.ViewModels
         {
             try
             {
+                if (!this.IsProcessWebResourceResponseReceivedEnabled)
+                    return;
                 // 1. Filter to only the responses you care about (URL pattern, status code, etc.)
                 string url = args.Request.Uri;
+                Debug.WriteLine(url);
                 if (!IsMarketWatchUrl(url)) return;
 
 
@@ -63,7 +66,12 @@ namespace AlgoTrading.ViewModels
             }
             catch (Exception ex)
             {
+                
                 ReportStatus(new StatusMessage("MarketWatch Response", ex.Message, StatusMessageType.Error));
+            }
+            finally
+            {
+                IsProcessWebResourceResponseReceivedEnabled = false;
             }
         }
 
@@ -350,9 +358,9 @@ namespace AlgoTrading.ViewModels
             try
             {
                 IsProcessWebResourceResponseReceivedEnabled = true;
-                MarketWatchWindow window = _services.GetRequiredService<MarketWatchWindow>();
-                window.Owner = App.Current.MainWindow;
-                window.Show();
+                //MarketWatchWindow window = _services.GetRequiredService<MarketWatchWindow>();
+                //window.Owner = App.Current.MainWindow;
+                //window.Show();
 
             }
             catch (Exception exception)

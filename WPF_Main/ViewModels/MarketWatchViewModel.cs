@@ -287,6 +287,7 @@ public sealed class MarketWatchViewModel : BaseViewModel
     private async Task ExecutePollAsync()
     {
         CancellationTokenSource? cancellation = null;
+        HistoricalExecutionStatus = string.Empty;
         try
         {
             ErrorMessage = string.Empty;

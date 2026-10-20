@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using AlgoTrading.Models;
@@ -107,4 +108,9 @@ public partial class MarketWatchWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool DrawMenuBar(nint windowHandle);
+
+    private void TextBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
+    {
+       (sender as TextBox)?.ScrollToEnd();
+    }
 }
