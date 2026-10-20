@@ -1,0 +1,34 @@
+<Window x:Class="AlgoTrading.RuleEditor.Windows.InstrumentPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Pick instrument" Height="520" Width="760"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="10">
+            <TextBlock Text="Search:" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <TextBox x:Name="SearchBox" Width="340" Margin="0,0,8,0"/>
+            <Button Content="Search" Padding="14,2" Click="OnSearchClick"/>
+            <TextBlock x:Name="MultiHint" Margin="16,4,0,0" Foreground="DimGray"
+                       VerticalAlignment="Center" Visibility="Collapsed"
+                       Text="Ctrl+Click or Shift+Click to select multiple"/>
+        </StackPanel>
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="10">
+            <TextBlock x:Name="SelCountText" VerticalAlignment="Center"
+                       Margin="0,0,12,0" Foreground="DimGray"/>
+            <Button Content="OK" Width="90" Margin="0,0,8,0" IsDefault="True" Click="OnOkClick"/>
+            <Button Content="Cancel" Width="90" IsCancel="True" Click="OnCancelClick"/>
+        </StackPanel>
+        <DataGrid x:Name="Grid" Margin="10,0,10,10" AutoGenerateColumns="False"
+                  IsReadOnly="True" SelectionMode="Single" CanUserAddRows="False"
+                  MouseDoubleClick="OnGridDoubleClick"
+                  SelectionChanged="OnGridSelectionChanged">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Token" Binding="{Binding Token}" Width="90"/>
+                <DataGridTextColumn Header="Symbol" Binding="{Binding Symbol}" Width="160"/>
+                <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="*"/>
+                <DataGridTextColumn Header="Type" Binding="{Binding InstrumentType}" Width="110"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>

@@ -1,0 +1,41 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>AlgoTrading.Backtest.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Remove="ConditionEvaluatorTests.cs" />
+    <Compile Remove="ExpressionEvaluatorTests.cs" />
+    <Compile Remove="IndicatorProviderTests.cs" />
+    <Compile Remove="MarginRejectionTests.cs" />
+
+    <Compile Remove="MetricCoverageTests.cs" />
+
+    <Compile Remove="NanPropagationTests.cs" />
+    <Compile Remove="TestHelpers.cs" />
+    <Compile Remove="TimeframeAccessorTests.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Remove="AlgoTrading.Backtest.Tests.csproj.bak" />
+    <None Remove="errors_output.txt" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Backtest\AlgoTrading.Backtest.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Indicators\AlgoTrading.Indicators.csproj" />
+  </ItemGroup>
+</Project>

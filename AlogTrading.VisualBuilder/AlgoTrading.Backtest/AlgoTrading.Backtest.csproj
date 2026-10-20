@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>AlgoTrading.Backtest</RootNamespace>
+    <AssemblyName>AlgoTrading.Backtest</AssemblyName>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!-- Delta 01.5: Release output to ..\Library\bin\<TFM>\ -->
+  <PropertyGroup Condition="'$(Configuration)'=='Release'">
+    <OutDir>..\Library\bin\$(TargetFramework)\</OutDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Indicators\AlgoTrading.Indicators.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AlgoTrading.Backtest.Tests" />
+  </ItemGroup>
+</Project>

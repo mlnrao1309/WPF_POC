@@ -1,0 +1,42 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Controls.ParameterPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Border BorderBrush="#C8D0DA" BorderThickness="1" Margin="0,10,0,0">
+        <StackPanel>
+            <Expander Header="Parameters" IsExpanded="True" Padding="4">
+                <StackPanel Margin="6">
+                    <ItemsControl x:Name="ParamItems">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,2,0,2">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="140"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBox Grid.Column="0" Text="{Binding Name, UpdateSourceTrigger=LostFocus}"
+                                             Margin="2"/>
+                                    <TextBox Grid.Column="1" Text="{Binding Default, UpdateSourceTrigger=LostFocus}"
+                                             Margin="2"/>
+                                    <TextBox Grid.Column="2" Text="{Binding Minimum, UpdateSourceTrigger=LostFocus}"
+                                             Margin="2"/>
+                                    <TextBox Grid.Column="3" Text="{Binding Maximum, UpdateSourceTrigger=LostFocus}"
+                                             Margin="2"/>
+                                    <TextBox Grid.Column="4" Text="{Binding Step, UpdateSourceTrigger=LostFocus}"
+                                             Margin="2"/>
+                                    <Button Grid.Column="5" Content="X" Width="24" Margin="2"
+                                            Click="OnDeleteRowClick" Tag="{Binding}"/>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Button Content="+ Parameter" Padding="8,2" Margin="2,8,2,0"
+                            HorizontalAlignment="Left" Click="OnAddRowClick"/>
+                </StackPanel>
+            </Expander>
+        </StackPanel>
+    </Border>
+</UserControl>

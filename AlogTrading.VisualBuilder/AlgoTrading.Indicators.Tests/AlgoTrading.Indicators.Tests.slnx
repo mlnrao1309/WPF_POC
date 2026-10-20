@@ -1,0 +1,8 @@
+<Solution>
+  <Project Path="../AlgoTrading.Aggregation/AlgoTrading.Aggregation.csproj" />
+  <Project Path="../AlgoTrading.Backtest/AlgoTrading.Backtest.csproj" />
+  <Project Path="../AlgoTrading.Data/AlgoTrading.Data.csproj" />
+  <Project Path="../AlgoTrading.Indicators/AlgoTrading.Indicators.csproj" />
+  <Project Path="../AlgoTrading.Models/AlgoTrading.Models.csproj" />
+  <Project Path="AlgoTrading.Indicators.Tests.csproj" />
+</Solution>

@@ -1,0 +1,15 @@
+<Solution>
+  <Project Path="AlgoTrading.Models/AlgoTrading.Models.csproj" />
+  <Project Path="AlgoTrading.Data/AlgoTrading.Data.csproj" />
+  <Project Path="AlgoTrading.Aggregation/AlgoTrading.Aggregation.csproj" />
+  <Project Path="AlgoTrading.Indicators/AlgoTrading.Indicators.csproj" />
+  <Project Path="AlgoTrading.Backtest/AlgoTrading.Backtest.csproj" />
+  <Project Path="AlgoTrading.Backtest.Cli/AlgoTrading.Backtest.Cli.csproj" />
+  <Project Path="AlgoTrading.RuleEditor/AlgoTrading.RuleEditor.csproj" />
+  <Project Path="AlgoTrading.Models.Tests/AlgoTrading.Models.Tests.csproj" />
+  <Project Path="AlgoTrading.Data.Tests/AlgoTrading.Data.Tests.csproj" />
+  <Project Path="AlgoTrading.Aggregation.Tests/AlgoTrading.Aggregation.Tests.csproj" />
+  <Project Path="AlgoTrading.Indicators.Tests/AlgoTrading.Indicators.Tests.csproj" />
+  <Project Path="AlgoTrading.Backtest.Tests/AlgoTrading.Backtest.Tests.csproj" />
+  <Project Path="AlgoTrading.Backtest.Cli.Tests/AlgoTrading.Backtest.Cli.Tests.csproj" />
+</Solution>

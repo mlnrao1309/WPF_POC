@@ -1,0 +1,103 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Tabs.BacktestTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0" BorderBrush="#C8D0DA" BorderThickness="0,0,0,1" Padding="12">
+            <StackPanel>
+                <TextBlock Text="Backtest Queue" FontWeight="Bold" Margin="0,0,0,8"/>
+
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="140"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="From"
+                               VerticalAlignment="Center" Margin="0,4,8,4"/>
+                    <DatePicker Grid.Row="0" Grid.Column="1" x:Name="FromPicker" Width="160"
+                                HorizontalAlignment="Left" Margin="0,4"/>
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="To"
+                               VerticalAlignment="Center" Margin="0,4,8,4"/>
+                    <DatePicker Grid.Row="1" Grid.Column="1" x:Name="ToPicker" Width="160"
+                                HorizontalAlignment="Left" Margin="0,4"/>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Base timeframe"
+                               VerticalAlignment="Center" Margin="0,4,8,4"/>
+                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="BaseTfBox" Width="160"
+                             HorizontalAlignment="Left" Margin="0,4" IsReadOnly="True"/>
+                </Grid>
+
+                <TextBlock Text="Instruments" Margin="0,10,0,4"/>
+                <ListBox x:Name="TokenListBox" Height="110" SelectionMode="Extended"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock>
+                                <Run Text="{Binding Token}"/>
+                                <Run Text=" - "/>
+                                <Run Text="{Binding Symbol}"/>
+                                <Run Text="{Binding DisplayName, StringFormat=' ({0})'}"/>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button Content="Pick..." Padding="12,2" Margin="0,0,6,0"
+                            Click="OnPickTokensClick"/>
+                    <Button Content="Remove selected" Padding="12,2" Margin="0,0,6,0"
+                            Click="OnRemoveSelectedClick"/>
+                    <Button Content="Clear" Padding="12,2" Margin="0,0,6,0"
+                            Click="OnClearTokensClick"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <CheckBox x:Name="SweepBox" Content="Parameter sweep" Margin="0,0,24,0"
+                              Checked="OnModeCheckChanged" Unchecked="OnModeCheckChanged"/>
+                    <CheckBox x:Name="WalkForwardBox" Content="Walk-forward" Margin="0,0,24,0"
+                              Checked="OnModeCheckChanged" Unchecked="OnModeCheckChanged"/>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button x:Name="QueueButton" Content="Queue Backtest" Padding="14,4"
+                            Margin="0,0,10,0" Click="OnQueueClick"/>
+                    <Button x:Name="RunNowButton" Content="Run now" Padding="14,4"
+                            Margin="0,0,10,0" Click="OnRunNowClick"/>
+                    <Button Content="Open results folder" Padding="14,4" Click="OnOpenResultsClick"/>
+                    <TextBlock x:Name="QueueStatusText" Margin="16,6,0,0"
+                               Foreground="DimGray" VerticalAlignment="Center"/>
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" Padding="12,8" Background="#F4F6F9"
+                BorderBrush="#C8D0DA" BorderThickness="0,0,0,1">
+            <TextBlock Text="Recent runs" FontWeight="SemiBold"/>
+        </Border>
+
+        <DataGrid Grid.Row="2" x:Name="RunsGrid" Margin="12"
+                  AutoGenerateColumns="False" IsReadOnly="True"
+                  CanUserAddRows="False" HeadersVisibility="Column">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Run At"
+                    Binding="{Binding RunAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160"/>
+                <DataGridTextColumn Header="Mode" Binding="{Binding RunMode}" Width="120"/>
+                <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
+                <DataGridTextColumn Header="Instrument" Binding="{Binding InstrumentToken}" Width="110"/>
+                <DataGridTextColumn Header="Run Id" Binding="{Binding RunId}" Width="*"/>
+            </DataGrid.Columns>
+        </DataGrid>
+    </Grid>
+</UserControl>

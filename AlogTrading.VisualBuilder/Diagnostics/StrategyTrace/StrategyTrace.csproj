@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="AlgoTrading.Backtest" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Backtest.dll" />
+    <Reference Include="AlgoTrading.Aggregation" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Aggregation.dll" />
+    <Reference Include="AlgoTrading.Data" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Data.dll" />
+    <Reference Include="AlgoTrading.Models" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Models.dll" />
+    <Reference Include="AlgoTrading.Indicators" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Indicators.dll" />
+    <Reference Include="Dapper" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\Dapper.dll" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Optimize>true</Optimize>
+    <TieredPGO>true</TieredPGO>
+    <TieredCompilation>true</TieredCompilation>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>AlgoTrading.Aggregation</AssemblyName>
+    <RootNamespace>AlgoTrading.Aggregation</RootNamespace>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <EnablePackageValidation>false</EnablePackageValidation>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>D:\MyWorkspace\TradingRuleEditor_DeepSeek\Project\Library\bin\</OutputPath>
+  </PropertyGroup>
+</Project>

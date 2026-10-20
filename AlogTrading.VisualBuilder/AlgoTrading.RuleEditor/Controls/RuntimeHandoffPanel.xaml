@@ -1,0 +1,19 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Controls.RuntimeHandoffPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel Margin="8">
+        <TextBlock Text="Runtime handoff" FontWeight="Bold"/>
+        <TextBlock x:Name="TimeframesText"
+                   Margin="0,8,0,0"
+                   TextWrapping="Wrap"
+                   Foreground="#444"/>
+        <TextBlock x:Name="BaseRequiredText"
+                   Margin="0,6,0,0"
+                   TextWrapping="Wrap"
+                   Foreground="#444"/>
+        <TextBlock x:Name="FeasibilityText"
+                   Margin="0,6,0,0"
+                   TextWrapping="Wrap"
+                   FontWeight="SemiBold"/>
+    </StackPanel>
+</UserControl>

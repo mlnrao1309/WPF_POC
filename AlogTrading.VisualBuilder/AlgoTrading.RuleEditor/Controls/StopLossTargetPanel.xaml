@@ -1,0 +1,53 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Controls.StopLossTargetPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <StackPanel>
+        <Border BorderBrush="#C8D0DA" BorderThickness="1" Margin="0,8,0,0" Padding="8">
+            <StackPanel>
+                <TextBlock Text="Stop Loss" FontWeight="Bold"/>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock Text="Mode" Width="60" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="SlModeBox" Width="140" SelectionChanged="OnSlModeChanged">
+                        <ComboBoxItem Content="Percentage"/>
+                        <ComboBoxItem Content="Points"/>
+                        <ComboBoxItem Content="Rule"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="SlValueRow">
+                    <TextBlock Text="Value" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="SlValueBox" Width="120" LostFocus="OnSlValueChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="SlGroupRow">
+                    <TextBlock Text="Rule group" Width="80" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="SlGroupBox" Width="200" SelectionChanged="OnSlGroupChanged"/>
+                </StackPanel>
+                <CheckBox x:Name="SlEnabledBox" Content="Enable stop loss" Margin="0,6,0,0"
+                          Checked="OnSlEnabledChanged" Unchecked="OnSlEnabledChanged"/>
+            </StackPanel>
+        </Border>
+
+        <Border BorderBrush="#C8D0DA" BorderThickness="1" Margin="0,8,0,0" Padding="8">
+            <StackPanel>
+                <TextBlock Text="Target" FontWeight="Bold"/>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                    <TextBlock Text="Mode" Width="60" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="TpModeBox" Width="140" SelectionChanged="OnTpModeChanged">
+                        <ComboBoxItem Content="Percentage"/>
+                        <ComboBoxItem Content="Points"/>
+                        <ComboBoxItem Content="Rule"/>
+                    </ComboBox>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="TpValueRow">
+                    <TextBlock Text="Value" Width="60" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TpValueBox" Width="120" LostFocus="OnTpValueChanged"/>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,6,0,0" x:Name="TpGroupRow">
+                    <TextBlock Text="Rule group" Width="80" VerticalAlignment="Center"/>
+                    <ComboBox x:Name="TpGroupBox" Width="200" SelectionChanged="OnTpGroupChanged"/>
+                </StackPanel>
+                <CheckBox x:Name="TpEnabledBox" Content="Enable target" Margin="0,6,0,0"
+                          Checked="OnTpEnabledChanged" Unchecked="OnTpEnabledChanged"/>
+            </StackPanel>
+        </Border>
+    </StackPanel>
+</UserControl>

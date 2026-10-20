@@ -1,0 +1,33 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Controls.StrategyChecksPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top"
+                   Text="Strategy checks" FontWeight="Bold" Margin="8,8,8,4"/>
+
+        <TextBlock DockPanel.Dock="Bottom"
+                   x:Name="LookupStatusText"
+                   Margin="8,0,8,4"
+                   FontStyle="Italic"
+                   Foreground="Gray"
+                   TextWrapping="Wrap"
+                   Text=""/>
+
+        <Button DockPanel.Dock="Bottom"
+                Content="Validate now"
+                Margin="8,4,8,8"
+                Padding="8,4"
+                Click="OnValidateNowClick"/>
+
+        <ListBox x:Name="ErrorList"
+                 Margin="4"
+                 BorderThickness="0"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Display}" TextWrapping="Wrap"/>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

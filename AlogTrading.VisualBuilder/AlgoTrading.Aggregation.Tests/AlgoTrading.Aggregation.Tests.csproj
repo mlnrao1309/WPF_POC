@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>AlgoTrading.Aggregation.Tests</RootNamespace>
+    <AssemblyName>AlgoTrading.Aggregation.Tests</AssemblyName>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.11.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="4.0.1">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
+  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutputPath>D:\MyWorkspace\TradingRuleEditor_DeepSeek\Project\Library\bin\</OutputPath>
+  </PropertyGroup>
+</Project>

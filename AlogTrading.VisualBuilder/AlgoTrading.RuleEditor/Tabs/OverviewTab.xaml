@@ -1,0 +1,71 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Tabs.OverviewTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:AlgoTrading.RuleEditor.Controls">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="16">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="180"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Strategy name" Margin="0,6,8,6"/>
+                <TextBox   Grid.Row="0" Grid.Column="1" x:Name="StrategyNameBox"
+                           Margin="0,6" LostFocus="OnStrategyNameLostFocus"/>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Description" Margin="0,6,8,6"/>
+                <TextBox   Grid.Row="1" Grid.Column="1" x:Name="DescriptionBox"
+                           Margin="0,6" Height="60" AcceptsReturn="True"
+                           TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                           LostFocus="OnDescriptionLostFocus"/>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" x:Name="InstrumentLabel"
+                           Text="Instrument" Margin="0,6,8,6"/>
+                <DockPanel  Grid.Row="2" Grid.Column="1" Margin="0,6" x:Name="InstrumentRow">
+                    <Button  DockPanel.Dock="Right" x:Name="PickInstrumentButton"
+                             Content="Pick..." Width="80" Margin="6,0,0,0"
+                             Click="OnPickInstrumentClick"/>
+                    <TextBox x:Name="InstrumentBox" IsReadOnly="True"/>
+                </DockPanel>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" x:Name="TargetTfLabel"
+                           Text="Target timeframe" Margin="0,6,8,6"/>
+                <ComboBox  Grid.Row="3" Grid.Column="1" x:Name="TargetTfBox"
+                           Margin="0,6" SelectionChanged="OnTargetTfChanged"/>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="Direction" Margin="0,6,8,6"/>
+                <ComboBox  Grid.Row="4" Grid.Column="1" x:Name="DirectionBox"
+                           Margin="0,6" Width="160" HorizontalAlignment="Left"
+                           SelectionChanged="OnDirectionChanged"/>
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="Evaluation timeframe" Margin="0,6,8,6"/>
+                <ComboBox  Grid.Row="5" Grid.Column="1" x:Name="EvalTfBox"
+                           Margin="0,6" Width="160" HorizontalAlignment="Left"
+                           SelectionChanged="OnEvalTfChanged"/>
+
+                <TextBlock Grid.Row="6" Grid.Column="0" Text="Base timeframe" Margin="0,6,8,6"/>
+                <ComboBox  Grid.Row="6" Grid.Column="1" x:Name="BaseTfBox"
+                           Margin="0,6" Width="160" HorizontalAlignment="Left"
+                           SelectionChanged="OnBaseTfChanged"/>
+
+                <TextBlock Grid.Row="7" Grid.Column="0" Text="Execution mode" Margin="0,6,8,6"/>
+                <ComboBox  Grid.Row="7" Grid.Column="1" x:Name="ExecModeBox"
+                           Margin="0,6" Width="160" HorizontalAlignment="Left"
+                           SelectionChanged="OnExecModeChanged"/>
+            </Grid>
+
+            <controls:ParameterPanel x:Name="ParameterPanelControl"/>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

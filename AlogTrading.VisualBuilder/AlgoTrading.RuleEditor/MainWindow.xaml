@@ -1,0 +1,103 @@
+<Window x:Class="AlgoTrading.RuleEditor.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tabs="clr-namespace:AlgoTrading.RuleEditor.Tabs"
+        xmlns:controls="clr-namespace:AlgoTrading.RuleEditor.Controls"
+        Title="AlgoTrading Rule Editor"
+        Height="860" Width="1500"
+        WindowState="Maximized" WindowStartupLocation="Manual">
+    <DockPanel>
+        <ToolBarTray DockPanel.Dock="Top">
+            <ToolBar>
+                <Button x:Name="NewButton"     Content="New"     Padding="12,4" Click="OnNewClick"/>
+                <Button x:Name="OpenButton"    Content="Open"    Padding="12,4" Click="OnOpenClick"/>
+                <Button x:Name="SaveButton"    Content="Save"    Padding="12,4" Click="OnSaveClick"/>
+                <Button x:Name="SaveAsButton"  Content="Save As" Padding="12,4" Click="OnSaveAsClick"/>
+                <Separator/>
+                <Button x:Name="CostsButton"   Content="Costs"   Padding="12,4" Click="OnCostsClick"/>
+                <Separator/>
+                <TextBlock x:Name="ModeBadge" Text="Generic" Margin="12,0"
+                           VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock x:Name="FileLabel" Text="" Margin="12,0"
+                           VerticalAlignment="Center" Foreground="Gray"/>
+                <Separator/>
+                <ToggleButton x:Name="SidePanelToggle"
+                              Content="Side panel"
+                              Padding="10,2"
+                              IsChecked="True"
+                              ToolTip="Show or hide the side panel (Ctrl+Shift+C)"
+                              Checked="OnSidePanelToggleChanged"
+                              Unchecked="OnSidePanelToggleChanged"/>
+            </ToolBar>
+        </ToolBarTray>
+
+        <StatusBar DockPanel.Dock="Bottom">
+            <StatusBarItem>
+                <TextBlock x:Name="StatusText" Text="Ready"/>
+            </StatusBarItem>
+            <StatusBarItem HorizontalAlignment="Right">
+                <TextBlock Text="Completed bars only" FontStyle="Italic"/>
+            </StatusBarItem>
+        </StatusBar>
+
+        <Grid>
+            <Grid x:Name="OuterGrid">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition x:Name="MainColumn"   Width="*"/>
+                    <ColumnDefinition x:Name="SplitterColumn" Width="5"/>
+                    <ColumnDefinition x:Name="SidePanelColumn" Width="340" MinWidth="0"/>
+                </Grid.ColumnDefinitions>
+
+                <TabControl Grid.Column="0" x:Name="MainTabs">
+                    <TabItem Header="Overview">
+                        <tabs:OverviewTab x:Name="OverviewTabControl"/>
+                    </TabItem>
+                    <TabItem Header="Eligibility">
+                        <tabs:ConditionTab x:Name="EligibilityTabControl"/>
+                    </TabItem>
+                    <TabItem Header="Entry">
+                        <tabs:ConditionTab x:Name="EntryTabControl"/>
+                    </TabItem>
+                    <TabItem Header="Protection &amp; Exit">
+                        <tabs:ConditionTab x:Name="ProtectionTabControl"/>
+                    </TabItem>
+                    <TabItem Header="Full Exit">
+                        <tabs:ConditionTab x:Name="FullExitTabControl"/>
+                    </TabItem>
+                    <TabItem Header="Backtest">
+                        <tabs:BacktestTab x:Name="BacktestTabControl"/>
+                    </TabItem>
+                </TabControl>
+
+                <GridSplitter x:Name="SideSplitter"
+                              Grid.Column="1"
+                              Width="5"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Stretch"
+                              Background="#E8E8E8"
+                              ResizeBehavior="PreviousAndNext"
+                              ResizeDirection="Columns"
+                              ShowsPreview="True"
+                              DragCompleted="OnSplitterDragCompleted"/>
+
+                <Grid x:Name="SidePanelHost" Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <controls:StrategyChecksPanel x:Name="ChecksPanel" Grid.Row="0"
+                                                  BorderThickness="0,0,0,1"
+                                                  BorderBrush="#DDD"/>
+                    <controls:RuntimeHandoffPanel x:Name="HandoffPanel" Grid.Row="1"/>
+                </Grid>
+            </Grid>
+
+            <Grid x:Name="ToastOverlay"
+                  HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                  Margin="0,0,20,40">
+                <controls:NotificationHost x:Name="ToastHost"/>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</Window>
