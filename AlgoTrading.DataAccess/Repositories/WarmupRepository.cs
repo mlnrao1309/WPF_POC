@@ -76,7 +76,7 @@ public class WarmupRepository : IWarmupRepository
                         //var istTime = new DateTimeOffset(c.Timestamp, istOffset);
 
                         return Candle.Create(
-                            c.Timestamp,
+                            AlgoTrading.Models.MarketTimestamp.FromDatabase(c.Timestamp),
                             tf,
                             c.Open, c.High, c.Low, c.Close, c.Volume.HasValue? c.Volume.Value :0, c.OI);
                     })

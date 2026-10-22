@@ -79,14 +79,15 @@
             <TextBlock VerticalAlignment="Center" Text="From"/>
             <DatePicker Width="130" Margin="6,0,6,0"
                         SelectedDate="{Binding HistoricalFromDate, Mode=TwoWay}"/>
-            <TextBox Width="70" Margin="0,0,14,0" MaxLength="5" ToolTip="HH:mm"
-                     VerticalContentAlignment="Center"
-                     Text="{Binding HistoricalFromTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+            <ComboBox Width="70" Margin="0,0,14,0" ToolTip="HH:mm"
+                      VerticalContentAlignment="Center" ItemsSource="{Binding HistoricalTimes}"
+                      SelectedItem="{Binding HistoricalFromTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
             <TextBlock VerticalAlignment="Center" Text="To"/>
             <DatePicker Width="130" Margin="6,0,6,0"
                         SelectedDate="{Binding HistoricalToDate, Mode=TwoWay}"/>
-            <TextBox Width="70" MaxLength="5" ToolTip="HH:mm" VerticalContentAlignment="Center"
-                     Text="{Binding HistoricalToTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
+            <ComboBox Width="70" ToolTip="HH:mm" VerticalContentAlignment="Center"
+                      ItemsSource="{Binding HistoricalTimes}"
+                      SelectedItem="{Binding HistoricalToTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"/>
         </StackPanel>
         <DockPanel Grid.Row="10" Margin="0,12,0,0" LastChildFill="False">
             <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">

@@ -1,8 +1,10 @@
 ﻿using AlgoTrading.DataAccess.Calendar;
+using AlgoTrading.DataAccess.Etl;
 using AlgoTrading.DataAccess.Historical;
 using AlgoTrading.DataAccess.Infrastructure;
 using AlgoTrading.DataAccess.Infrastructure.DatabaseContext;
 using AlgoTrading.DataAccess.Repositories;
+using AlgoTrading.DataAccess.Runtime;
 using AlgoTrading.Models;
 using AlgoTrading.Repositories;
 using AlgoTrading.Screener.Dsl;
@@ -15,49 +17,30 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Win32;
 using System.Diagnostics;
+using System.IO;
 using System.Net.Http;
 using System.Windows;
 
 namespace AlgoTrading
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
-        //protected override void OnExit(ExitEventArgs e)
-        //{
-        //    base.OnExit(e);
-        //}
-
-        //protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
-        //{
-        //    base.OnSessionEnding(e);
-        //}
-        
         public static IServiceProvider? _serviceProvider;
+        public static IServiceProvider ServiceProvider { get => _serviceProvider ?? throw new InvalidOperationException("Service provider is not initialized."); private set => _serviceProvider = value; }
 
-        public static IServiceProvider Services { get => _serviceProvider ?? throw new InvalidOperationException("Service provider is not initialized."); private set => _serviceProvider = value; }
-        //private readonly IHost _host;
-        public static IServiceProvider ServiceProvider => _serviceProvider ?? throw new InvalidOperationException("Service provider is not initialized.");
+        private IHost? _host;
 
         protected override async void OnStartup(StartupEventArgs e)
         {
             base.OnStartup(e);
 
-            var services = new ServiceCollection();
-
-            // Configuration
+            // --- 1. Configuration & Paths ---
             var builder = new ConfigurationBuilder()
                 .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: true, reloadOnChange: false);
-
             IConfiguration configuration = builder.Build();
-            services.AddSingleton(configuration);
 
-            // Bind settings (ConnectionStrings section)
             var appSettings = new AppSettings();
             try
             {
@@ -69,178 +52,167 @@ namespace AlgoTrading
                 }
             }
             catch { }
-            services.AddSingleton(appSettings);
 
-            // Register ViewModels and Views
-            services.AddSingleton<AccessTokenStore>();
-            services.AddSingleton<IAccessTokenProvider>(provider => provider.GetRequiredService<AccessTokenStore>());
-            services.AddSingleton<ViewModels.WebViewViewModel>();
-            services.AddSingleton<IMarketWatchDataStream>(provider => provider.GetRequiredService<ViewModels.WebViewViewModel>());
-            services.AddSingleton(new HttpClient());
-            //services.AddTransient<ViewModels.MarketWatchViewModel>(provider => new ViewModels.MarketWatchViewModel(
-            //    provider.GetRequiredService<IMarketWatchDataService>(),
-            //    provider.GetRequiredService<IMarketWatchSyncService>(),
-            //    provider.GetRequiredService<IHistoricalDataWorkflow>(),
-            //    provider.GetRequiredService<IHistoricalPollingCoordinator>(),
-            //    provider.GetRequiredService<HistoricalDataModel>(),
-            //    action => Current.Dispatcher.InvokeAsync(action).Task));
-            services.AddSingleton<HistoricalDataModel>(provider =>
-                new HistoricalDataModel(
-                    provider.GetRequiredService<HttpClient>(),
-                    string.Empty,
-                    provider.GetRequiredService<SqlHistoricalIngestionRepository>()));
-            services.AddSingleton<IInstrumentRepository, InstrumentRepository>();
-            services.AddSingleton<IMarketWatchRepository, MarketWatchRepository>();
-            services.AddSingleton<IMarketWatchApiService, MarketWatchApiService>();
-            //services.AddSingleton<IMarketWatchSyncService, MarketWatchSyncService>();
-            //services.AddSingleton<IMarketWatchDataService, SqlMarketWatchDataService>();
-            services.AddSingleton<IHistoricalDataWorkflow, HistoricalDataWorkflow>();
-            services.AddSingleton<IHistoricalPollingCoordinator, HistoricalPollingCoordinator>();
-            services.AddTransient<MainWindow>();
-            //services.AddTransient<MarketWatchWindow>();
-            services.AddSingleton<MarketWatchViewModel>();
-            services.AddTransient<MarketWatchWindow>();   // or AddTransient — see note below
-            services.AddSingleton<IQueryStore, FileQueryStore>();
-            services.AddSingleton<QueryCache>();
-            services.AddSingleton<IQueryStore, FileQueryStore>();
-            services.AddSingleton<ISettingsStore, FileSettingsStore>();
-            services.AddSingleton<ScreenerExecutionPlanBuilder>();
-            services.AddSingleton<ScreenerPlanStore>();
-            //services.AddTransient<ScreenerWindow>(); 
-            services.AddTransient<ScreenerWindow>();
-            services.AddScoped<IScreenerRepository, ScreenerRepository>();
-            services.AddScoped<IScreenerRunner, ScreenerRunner>();
-            services.AddScoped<ScreenerRunner>();
-            services.AddScoped<IScreenerRunner>(sp => sp.GetRequiredService<ScreenerRunner>());
             string? connectionString = Environment.GetEnvironmentVariable("ALGOTRADING_SQL_CONNECTION_STRING")
                 ?? configuration.GetConnectionString("MsSqlDatabase");
-            //// Data access registrations
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                MessageBox.Show("A SQL connection string is required. Configure ConnectionStrings:MsSqlDatabase "
-                    + "or ALGOTRADING_SQL_CONNECTION_STRING.", "Startup failed", MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                MessageBox.Show("A SQL connection string is required.", "Startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown(-1);
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
+            // Declare folders at the method scope so startup logic can use them
+            string resourcesFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AlgoTrading", "Resources");
+            string scannerFolder = Path.Combine(resourcesFolder, "Screener");
 
-                services.AddDbContext<ApplicationDbContext>(options =>
-                    options.UseSqlServer(connectionString));
+            // --- 2. Build the Host & DI Container ---
+            _host = Host.CreateDefaultBuilder()
+                .ConfigureServices((context, services) =>
+                {
+                    services.AddSingleton(configuration);
+                    services.AddSingleton(appSettings);
 
-                services.AddScoped<DataAccess.Infrastructure.Repositories.IInstrumentEqRepository, DataAccess.Infrastructure.Repositories.InstrumentEqRepository>();
-                services.AddScoped<DataAccess.Infrastructure.Repositories.IInstrumentFoRepository, DataAccess.Infrastructure.Repositories.InstrumentFoRepository>();
-                services.AddScoped<DataAccess.Infrastructure.Repositories.IUnitOfWork, DataAccess.Infrastructure.Repositories.UnitOfWork>();
-                services.AddScoped<IPlatformConfigurationProvider, PlatformConfigurationProvider>();
-                services.AddSingleton<IPlatformConfigurationRuntime, PlatformConfigurationRuntime>();
+                    // --- Existing View & ViewModel Registrations ---
+                    services.AddSingleton<AccessTokenStore>();
+                    services.AddSingleton<IAccessTokenProvider>(provider => provider.GetRequiredService<AccessTokenStore>());
+                    services.AddSingleton<ViewModels.WebViewViewModel>();
+                    services.AddSingleton<IMarketWatchDataStream>(provider => provider.GetRequiredService<ViewModels.WebViewViewModel>());
+                    services.AddSingleton(new HttpClient());
 
-                services.AddSingleton<ITradingCalendarRepository>(
-                    new SqlTradingCalendarRepository(connectionString, commandTimeoutSeconds: 30));
-                services.AddSingleton<ITradingCalendarProvider, RepositoryTradingCalendarProvider>();
-                services.AddSingleton(new SqlHistoricalIngestionRepository(connectionString));
+                    services.AddSingleton<HistoricalDataModel>(provider =>
+                        new HistoricalDataModel(
+                            provider.GetRequiredService<HttpClient>(),
+                            string.Empty,
+                            provider.GetRequiredService<SqlHistoricalIngestionRepository>()));
 
-                IConfigurationSection calendar = configuration.GetSection("TradingCalendar");
-                services.AddSingleton(new TradingCalendarSelection(
-                    calendar["ExchangeCode"] ?? "NSE",
-                    calendar["SegmentCode"] ?? "CM",
-                    calendar["Revision"] ?? throw new InvalidOperationException("TradingCalendar:Revision is required.")));
-                services.AddScoped<IMarketWatchRepository, MarketWatchRepository>();
-                services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
+                    services.AddSingleton<IInstrumentRepository, InstrumentRepository>();
+                    services.AddSingleton<IMarketWatchRepository, MarketWatchRepository>();
+                    services.AddSingleton<IMarketWatchApiService, MarketWatchApiService>();
+                    services.AddSingleton<IHistoricalDataWorkflow, HistoricalDataWorkflow>();
+                    services.AddSingleton<IHistoricalPollingCoordinator, HistoricalPollingCoordinator>();
+                    services.AddTransient<MainWindow>();
+                    services.AddSingleton<MarketWatchViewModel>();
+                    services.AddTransient<MarketWatchWindow>();
 
-                // Background service (auto-expire / soft delete)
-                //services.AddHoster<MarketWatchExpiryService>();
-            }
-            // Example inside App.xaml.cs service configuration
-            services.AddSingleton<IWarmupRepository>(provider =>
-            {   
-                return new WarmupRepository(connectionString);
-            });
-            services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
-            services.AddScoped<IInstrumentImportService, InstrumentImportService>();
-            _serviceProvider = services.BuildServiceProvider();
+                    // --- Screener Registrations ---
+                    services.AddSingleton<IQueryStore, FileQueryStore>();
+                    services.AddSingleton<QueryCache>();
+                    services.AddSingleton<ISettingsStore, FileSettingsStore>();
+                    services.AddSingleton<ScreenerExecutionPlanBuilder>();
+                    services.AddSingleton<ScreenerPlanStore>();
+                    services.AddTransient<ScreenerWindow>();
+                    services.AddScoped<IScreenerRepository, ScreenerRepository>();
+                    services.AddScoped<ScreenerRunner>();
+                    services.AddScoped<IScreenerRunner>(sp => sp.GetRequiredService<ScreenerRunner>());
 
-            // Construct the subscriber before WebView2 navigation so MarketWatch responses cannot be missed.
+                    // --- Data Access Registrations ---
+                    services.AddDbContext<ApplicationDbContext>(options => options.UseSqlServer(connectionString));
+                    services.AddScoped<DataAccess.Infrastructure.Repositories.IInstrumentEqRepository, DataAccess.Infrastructure.Repositories.InstrumentEqRepository>();
+                    services.AddScoped<DataAccess.Infrastructure.Repositories.IInstrumentFoRepository, DataAccess.Infrastructure.Repositories.InstrumentFoRepository>();
+                    services.AddScoped<DataAccess.Infrastructure.Repositories.IUnitOfWork, DataAccess.Infrastructure.Repositories.UnitOfWork>();
+                    services.AddScoped<IPlatformConfigurationProvider, PlatformConfigurationProvider>();
+                    services.AddSingleton<IPlatformConfigurationRuntime, PlatformConfigurationRuntime>();
+
+                    services.AddSingleton<ITradingCalendarRepository>(new SqlTradingCalendarRepository(connectionString, commandTimeoutSeconds: 30));
+                    services.AddSingleton<ITradingCalendarProvider, RepositoryTradingCalendarProvider>();
+                    services.AddSingleton(provider => new SqlHistoricalIngestionRepository(connectionString, provider.GetRequiredService<IInstrumentRegistry>()));
+
+                    IConfigurationSection calendar = configuration.GetSection("TradingCalendar");
+                    services.AddSingleton(new TradingCalendarSelection(
+                        calendar["ExchangeCode"] ?? "NSE",
+                        calendar["SegmentCode"] ?? "CM",
+                        calendar["Revision"] ?? throw new InvalidOperationException("TradingCalendar:Revision is required.")));
+
+                    services.AddScoped<IMarketWatchRepository, MarketWatchRepository>();
+                    services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();
+
+                    // --- ETL & Flat-File Registrations (NEW) ---
+                    services.AddSingleton<IWarmupRepository>(provider => new WarmupRepository(connectionString));
+                    services.AddSingleton(new WarmupEtlRepository(connectionString));
+                    services.AddSingleton<WarmupEtlService>();
+                    services.AddSingleton(new SnapshotLoader(resourcesFolder));
+
+                    // Registry & Background Services
+                    services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
+                    services.AddSingleton<ILiveMarketDataProvider, MockLiveMarketDataProvider>();
+                    services.AddHostedService<LivePollingService>();
+
+                    services.AddScoped<IInstrumentImportService, InstrumentImportService>();
+                })
+                .Build();
+
+            _serviceProvider = _host.Services;
+
+            // Construct the subscriber before WebView2 navigation
             _serviceProvider.GetRequiredService<MarketWatchViewModel>();
 
-            // Show the shell before background startup work that may wait on external services.
-            var main = _serviceProvider.GetRequiredService<MainWindow>();
-            main.Show();
-
-            ViewModels.WebViewViewModel webViewViewModel = _serviceProvider
-                .GetRequiredService<ViewModels.WebViewViewModel>();
-            await webViewViewModel.CalendarLoadTask;
-
-            if (!string.IsNullOrWhiteSpace(connectionString))
-            {
-                try
-                {
-                    using (IServiceScope scope = _serviceProvider.CreateScope())
-                    {
-                        IPlatformConfigurationProvider provider = scope.ServiceProvider
-                            .GetRequiredService<IPlatformConfigurationProvider>();
-                        IPlatformConfigurationRuntime runtime = _serviceProvider
-                            .GetRequiredService<IPlatformConfigurationRuntime>();
-                        await runtime.InitializeAsync(provider);
-                        //uncomment later when we have a proper configuration provider
-                    }
-                }
-                catch (Exception exception)
-                {
-                    MessageBox.Show("Background market-data configuration is invalid or unavailable. "
-                        + "Processing was not started.\n\n" + exception.Message,
-                        "Market-data startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
-
+            // --- 3. Startup Data Initialization (Flat File / ETL) ---
             try
             {
-                // Resolve the repository from your DI container
-                var warmupRepository = _serviceProvider.GetRequiredService<IWarmupRepository>();
+                var loader = _serviceProvider.GetRequiredService<SnapshotLoader>();
+                var snapshot = await loader.LoadLatestSnapshotAsync();
 
-                // Step 1: Check for disqualified/stale instruments
-                //var disqualifiedInstruments = await warmupRepository.GetDisqualifiedInstrumentsAsync();
+                if (snapshot == null || snapshot.Instruments.Count == 0)
+                {
+                    // ETL FALLBACK
+                    MessageBox.Show("No warmup JSON found. Running ETL for the first time. This may take a minute...", "First Time Setup");
 
-                //if (disqualifiedInstruments.Any())
-                //{
-                //    int count = disqualifiedInstruments.Count();
-                //    var message = $"Found {count} disqualified or stale instrument(s). Do you want to proceed with the warmup sequence anyway?";
+                    var etlService = _serviceProvider.GetRequiredService<WarmupEtlService>();
+                    await etlService.RunWarmupEtlAsync(scannerFolder, resourcesFolder);
 
-                //    // WPF Confirmation Dialog
-                //    var result = MessageBox.Show(
-                //        message,
-                //        "Warmup Validation Warning",
-                //        MessageBoxButton.YesNo,
-                //        MessageBoxImage.Warning);
+                    snapshot = await loader.LoadLatestSnapshotAsync();
+                    if (snapshot == null) throw new Exception("ETL failed to generate snapshot.");
+                }
 
-                //    if (result == MessageBoxResult.No)
-                //    {
-                //        // Graceful abort
-                //        Shutdown();
-                //        return;
-                //    }
-                //}
-
-                // Step 2: Fetch the full warmup snapshot (e.g., 52 weeks of history)
-                short weeksNeeded = 30;
-                Debug.WriteLine($"Fetching warmup snapshot for the last {weeksNeeded} weeks... Started At {DateTime.Now}");
-                var activeInstruments = await warmupRepository.GetWarmupSnapshotAsync(weeksNeeded);
-                Debug.WriteLine($"Warmup snapshot fetched successfully. Count: {activeInstruments.Count}. Completed At {DateTime.Now}");
-                // Pass activeInstruments into your singleton state manager or strategy engine here...
+                // Initialize Singleton Registry
                 var registry = _serviceProvider.GetRequiredService<IInstrumentRegistry>();
-                // Populate the singleton registry
-                registry.Initialize(activeInstruments.Values);
+                registry.Initialize(snapshot);
 
+                // Start Background Host (Live Polling)
+                await _host.StartAsync();
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Critical error during startup data ingestion: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
+                return;
+            }
+
+            // --- 4. Show UI ---
+            var main = _serviceProvider.GetRequiredService<MainWindow>();
+            main.Show();
+
+            // --- 5. Existing Background Initialization ---
+            ViewModels.WebViewViewModel webViewViewModel = _serviceProvider.GetRequiredService<ViewModels.WebViewViewModel>();
+            await webViewViewModel.CalendarLoadTask;
+
+            try
+            {
+                using (IServiceScope scope = _serviceProvider.CreateScope())
+                {
+                    IPlatformConfigurationProvider provider = scope.ServiceProvider.GetRequiredService<IPlatformConfigurationProvider>();
+                    IPlatformConfigurationRuntime runtime = _serviceProvider.GetRequiredService<IPlatformConfigurationRuntime>();
+                    await runtime.InitializeAsync(provider);
+                }
+            }
+            catch (Exception exception)
+            {
+                MessageBox.Show("Background market-data configuration is invalid or unavailable. "
+                    + "Processing was not started.\n\n" + exception.Message,
+                    "Market-data startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 
+        protected override async void OnExit(ExitEventArgs e)
+        {
+            if (_host != null)
+            {
+                await _host.StopAsync();
+                _host.Dispose();
+            }
+            base.OnExit(e);
+        }
     }
-
 }

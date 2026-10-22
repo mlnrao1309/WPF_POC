@@ -62,9 +62,9 @@ public sealed class MarketWatchViewModel : BaseViewModel
 
         DateTime marketNow = MarketTimestamp.ToDatabase(DateTimeOffset.UtcNow);
         HistoricalFromDate = marketNow.AddYears(-1).Date;
-        HistoricalFromTime = marketNow.ToString("HH:mm", CultureInfo.InvariantCulture);
+        HistoricalFromTime = "09:15";
         HistoricalToDate = marketNow.Date;
-        HistoricalToTime = marketNow.ToString("HH:mm", CultureInfo.InvariantCulture);
+        HistoricalToTime = "15:45";
 
         PollCommand = new AsyncRelayCommand(ExecutePollAsync);
         StopPollingCommand = new AsyncRelayCommand(ExecuteStopPollingAsync);
@@ -131,6 +131,9 @@ public sealed class MarketWatchViewModel : BaseViewModel
     public ObservableCollection<MarketWatchInstrumentItem> Instruments { get; }
     public ObservableCollection<HistoryCandleIntervalOption> HistoryCandleIntervals { get; }
     public ObservableCollection<string> SelectedHistoryCandleIntervals { get; }
+    public IReadOnlyList<string> HistoricalTimes { get; } = Enumerable.Range(0, 391)
+        .Select(minutes => new TimeOnly(9, 15).AddMinutes(minutes).ToString("HH:mm", CultureInfo.InvariantCulture))
+        .ToArray();
 
     private DateTime? _historicalFromDate;
     public DateTime? HistoricalFromDate

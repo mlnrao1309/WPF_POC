@@ -106,7 +106,12 @@ public sealed class ScreenerRunner : IScreenerRunner
     private static List<Bar> MapToBars(Instruments inst, Timeframe tf)
     {
         // Check if the instrument has candles for the requested timeframe
-        if (!inst.TryGetCandles(tf, out var candles)) return new List<Bar>();
+        Candles candles;
+        lock (inst)
+        {
+            if (!inst.TryGetCandles(tf, out candles)) return new List<Bar>();
+        }
+        // Candles is immutable, so conversion can finish after releasing the instrument lock.
 
         var bars = new List<Bar>(candles.Count);
 

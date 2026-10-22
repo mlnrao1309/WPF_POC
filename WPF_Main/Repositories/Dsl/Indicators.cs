@@ -11,8 +11,11 @@ public static class Indicators
     }
 
     public static int IntArg(Series s, int n, int fallback = 0)
-        => (int)(s.AsNum(n - 1) ?? fallback);
-
+    {
+        // Guard against n == 0 (empty candles) to prevent IndexOutOfRange
+        if (n <= 0) return fallback;
+        return (int)(s.AsNum(n - 1) ?? fallback);
+    }
     // =====================================================================
     // Moving averages
     // =====================================================================

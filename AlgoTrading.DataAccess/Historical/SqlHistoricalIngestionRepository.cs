@@ -1,4 +1,8 @@
 using System.Data;
+using AlgoTrading.DataAccess.Repositories;
+using AlgoTrading.DataAccess.Runtime;
+using Stage1Scanner.Core.Market;
+using Candle = Stage1Scanner.Core.Market.Candle;
 using System.Globalization;
 using System.Text.Json;
 using AlgoTrading.Models;
@@ -15,8 +19,10 @@ namespace AlgoTrading.DataAccess.Historical
     public sealed class SqlHistoricalIngestionRepository : IHistoricalIngestionRepository
     {
         private readonly string connectionString;
+        private readonly IInstrumentRegistry? registry;
+        private readonly SemaphoreSlim completedCandleGate = new(1, 1);
 
-        public SqlHistoricalIngestionRepository(string connectionString)
+        public SqlHistoricalIngestionRepository(string connectionString, IInstrumentRegistry? registry = null)
         {
             if (string.IsNullOrWhiteSpace(connectionString))
             {
@@ -24,6 +30,7 @@ namespace AlgoTrading.DataAccess.Historical
             }
 
             this.connectionString = connectionString;
+            this.registry = registry;
         }
 
         public async Task<DateTime?> GetLatestCandleTimestampAsync(long instrumentToken, string databaseTimeframe,
@@ -110,7 +117,16 @@ namespace AlgoTrading.DataAccess.Historical
         public async Task PersistChunkAsync(HistoricalChunkRequest request, string providerPayload,
             CancellationToken cancellationToken)
         {
-            await this.PersistAsync(request, providerPayload, false, cancellationToken);
+            // Keep SQL commit order and memory publication order identical across polling workers.
+            await this.completedCandleGate.WaitAsync(cancellationToken);
+            try
+            {
+                await this.PersistAsync(request, providerPayload, false, cancellationToken);
+            }
+            finally
+            {
+                this.completedCandleGate.Release();
+            }
         }
 
         private async Task PersistAsync(HistoricalChunkRequest request, string providerPayload, bool advanceCheckpoint,
@@ -121,8 +137,22 @@ namespace AlgoTrading.DataAccess.Historical
                 throw new ArgumentNullException(nameof(request));
             }
 
-            DataTable candles = BuildCandleTable(request, providerPayload);
-            using (candles)
+            using DataTable candles = BuildCandleTable(request, providerPayload);
+            // Only the completed-candle polling path publishes to the warmup registry.
+            // Resolve and convert before opening SQL so missing warmup state fails explicitly.
+            Instruments? instrument = request.CandleStart.HasValue && this.registry != null
+                ? this.registry.GetByToken(request.InstrumentToken)
+                    ?? throw new InvalidOperationException($"Instrument {request.InstrumentToken} is missing from the warmup registry.")
+                : null;
+            string databaseTimeframe = HistoricalStreamTypes.GetDatabaseTimeframe(request.StreamType);
+            Timeframe timeframe = databaseTimeframe == "D" ? Timeframe.Day
+                : Timeframe.Minutes(int.Parse(databaseTimeframe, CultureInfo.InvariantCulture));
+            Candle[]? completed = instrument == null ? null : candles.AsEnumerable().Select(row => Candle.Create(
+                MarketTimestamp.FromDatabase(row.Field<DateTime>("TimeStamp")), timeframe,
+                row.Field<decimal>("Open"), row.Field<decimal>("High"), row.Field<decimal>("Low"),
+                row.Field<decimal>("Close"), row.Field<long>("Volume"), row.Field<long>("OI")))
+                .Where(candle => candle.CloseTime <= MarketTimestamp.FromDatabase(request.CandleEnd!.Value))
+                .ToArray();
             using (SqlConnection connection = new SqlConnection(this.connectionString))
             {
                 await connection.OpenAsync(cancellationToken);
@@ -149,6 +179,10 @@ namespace AlgoTrading.DataAccess.Historical
                         throw;
                     }
                 }
+                // Never publish on validation, staging, merge, commit, or cancellation failure.
+                if (completed is { Length: > 0 })
+                    foreach (var candle in completed)
+                        instrument!.AppendLiveCandle(timeframe, candle);
             }
         }
 

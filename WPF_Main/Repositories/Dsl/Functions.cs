@@ -1,3 +1,5 @@
+using System.Diagnostics;
+
 namespace AlgoTrading.Screener.Dsl;
 
 public static class Functions
@@ -83,7 +85,13 @@ public static class Functions
         // ---- predicate windows ----
         d["COUNT"]       = (a, n) => Indicators.Count(a[0], Indicators.IntArg(a[1], n));
         d["COUNTSTREAK"] = (a, n) => Indicators.CountStreak(a[0]);
-        d["ANY"]         = (a, n) => Indicators.Any(a[0], Indicators.IntArg(a[1], n));
+        // Guard against missing arguments
+        d["ANY"] = (a, n) =>
+        {
+            Debug.WriteLine($"{a}, {n}" );
+            if (a.Count < 2) throw new ArgumentException("ANY requires 2 arguments: a predicate and a window size. Example: ANY(ema5 crossedbelow ema20, 5)");
+            return Indicators.Any(a[0], Indicators.IntArg(a[1], n));
+        };
         d["ALL"]         = (a, n) => Indicators.All(a[0], Indicators.IntArg(a[1], n));
 
         // ---- NEW: bars since ----
