@@ -97,3 +97,16 @@ public sealed class DonchianSeries
     public required NumericSeries Middle { get; init; }
     public required NumericSeries Lower { get; init; }
 }
+
+/// <summary>Candle-aligned levels derived from the previous completed positional candle.</summary>
+public sealed class CamarillaSeries
+{
+    public required NumericSeries R4 { get; init; }
+    public required NumericSeries R3 { get; init; }
+    public required NumericSeries R2 { get; init; }
+    public required NumericSeries R1 { get; init; }
+    public required NumericSeries S1 { get; init; }
+    public required NumericSeries S2 { get; init; }
+    public required NumericSeries S3 { get; init; }
+    public required NumericSeries S4 { get; init; }
+}

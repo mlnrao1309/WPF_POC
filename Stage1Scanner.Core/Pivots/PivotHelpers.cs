@@ -191,3 +191,20 @@ public static class PivotHelpers
     private static decimal Round2(decimal value)
         => Math.Round(value, 2, MidpointRounding.AwayFromZero);
 }
+
+/// <summary>Unrounded Camarilla levels: close +/- 1.1 * range / (12, 6, 4, 2).</summary>
+public sealed record CamarillaPivots(
+    decimal R4, decimal R3, decimal R2, decimal R1,
+    decimal S1, decimal S2, decimal S3, decimal S4)
+{
+    public static CamarillaPivots Calculate(decimal high, decimal low, decimal close)
+    {
+        if (high < low || close < low || close > high)
+            throw new ArgumentException("Camarilla requires valid source high, low and close bounds.");
+        decimal shift = (high - low) * 1.1m;
+        return new(close + shift / 2m, close + shift / 4m,
+            close + shift / 6m, close + shift / 12m,
+            close - shift / 12m, close - shift / 6m,
+            close - shift / 4m, close - shift / 2m);
+    }
+}

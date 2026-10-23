@@ -3,6 +3,10 @@ using AlgoTrading.DataAccess.FlatFiles;
 using AlgoTrading.DataAccess.Repositories;
 using AlgoTrading.DataAccess.Runtime;
 using Stage1Scanner.Core.Market;
+using Stage1Scanner.Core.Indicators;
+using Stage1Scanner.Core.Pivots;
+using Stage1Scanner.Core.Rules;
+using Stage1Scanner.Core.ScannerModel;
 
 internal static class Program
 {
@@ -22,6 +26,11 @@ internal static class Program
 
     private static async Task RunAsync(string[] arguments)
     {
+        if (arguments.Length == 1 && arguments[0] == "--stage1-volume-pivots")
+        {
+            new Stage1VolumeAndPivotTests().Run();
+            return;
+        }
         if (arguments.Length == 1 && arguments[0] == "--screener-indicators")
         {
             new ScreenerIndicatorTests().Run();
@@ -57,6 +66,7 @@ internal static class Program
 
         await VerifyDataAccessAsync();
         new ScreenerIndicatorTests().Run();
+        new Stage1VolumeAndPivotTests().Run();
         RuleRegressionTests tests = new RuleRegressionTests();
         tests.Run();
         CandleTimeTests candleTimeTests = new CandleTimeTests();
@@ -220,3 +230,164 @@ internal static class Program
 
 }
 
+internal sealed class Stage1VolumeAndPivotTests
+{
+    private int assertions;
+    private static readonly DateTimeOffset Start = new(2026, 10, 19, 9, 15, 0, TimeSpan.FromMinutes(330));
+
+    public void Run()
+    {
+        var tf = Timeframe.Minutes(15);
+        var adlBars = new Candles(tf, new[]
+        {
+            Bar(0, tf, 12, 8, 11, 100), Bar(1, tf, 14, 10, 11, 200),
+            Bar(2, tf, 10, 10, 10, 999), Bar(3, tf, 20, 10, 20, 0)
+        });
+        Equal(adlBars.ADL().Values, new decimal?[] { 50, -50, -50, -50 }, "ADL money-flow volume and zero range/volume");
+        Assert(ReferenceEquals(adlBars.ADL(), adlBars.ADL()), "ADL cache reuse");
+
+        var mfiBars = Prices(10, 12, 11, 13, 9);
+        Equal(mfiBars.MFI(2).Values, new decimal?[]
+        {
+            null, null, 100m - 100m / (1m + 24m / 33m),
+            100m - 100m / (1m + 52m / 33m), 100m - 100m / (1m + 52m / 45m)
+        }, "MFI rolling window");
+        Equal(Prices(10, 11, 12).MFI(2).Values, new decimal?[] { null, null, 100 }, "MFI all positive");
+        Equal(Prices(12, 11, 10).MFI(2).Values, new decimal?[] { null, null, 0 }, "MFI all negative");
+        Equal(Prices(10, 10, 10).MFI(2).Values, new decimal?[] { null, null, null }, "MFI unchanged typical price");
+        var typicalPrices = new Candles(tf, new[]
+        {
+            Bar(0, tf, 12, 8, 10, 100), Bar(1, tf, 24, 8, 10, 100), Bar(2, tf, 12, 6, 9, 100)
+        });
+        Equal(typicalPrices.MFI(1).Values, new decimal?[] { null, 100, 0 }, "MFI uses typical price rather than close changes");
+        Equal(new Candles(tf, mfiBars.Select(c => c with { Volume = 0 })).MFI(2).Values,
+            new decimal?[5], "MFI zero volume");
+        Assert(ReferenceEquals(mfiBars.MFI(2), mfiBars.MFI(2)), "MFI cache reuse");
+        Assert(!ReferenceEquals(mfiBars.MFI(2), mfiBars.MFI(3)), "MFI period cache isolation");
+        var ruleInstrument = new Instruments(2, "VOLUME");
+        ruleInstrument.SetCandles(tf, mfiBars);
+        var ruleContext = new EvaluationContext(ruleInstrument, mfiBars[^1].CloseTime);
+        Assert(new IndicatorOperand(new IndicatorSpec(IndicatorType.ADL, tf)).Resolve(ruleContext).Value
+            == mfiBars.ADL().Values[^1], "ADL rule resolution");
+        Assert(new IndicatorOperand(new IndicatorSpec(IndicatorType.MFI, tf, Period1: 2)).Resolve(ruleContext).Value
+            == mfiBars.MFI(2).Values[^1], "MFI rule resolution");
+        Throws<ArgumentOutOfRangeException>(() => mfiBars.MFI(0));
+        Throws<ArgumentOutOfRangeException>(() => mfiBars.MFI(-1));
+        Assert(new Candles(tf, Array.Empty<Candle>()).ADL().Count == 0, "Empty ADL");
+        Assert(new Candles(tf, Array.Empty<Candle>()).MFI().Count == 0, "Empty MFI");
+        Equal(Prices(10, 12).MFI(2).Values, new decimal?[2], "Insufficient MFI history");
+
+        foreach (var positional in new[] { Timeframe.Day, Timeframe.Week, Timeframe.Month })
+        {
+            // Use interval boundaries so even monthly candles have unique increasing closes.
+            var source = new[]
+            {
+                Candle.Create(Start, positional, 160, 220, 100, 160, 1),
+                Candle.Create(Start.AddMonths(2), positional, 180, 240, 120, 180, 1),
+                Candle.Create(Start.AddMonths(4), positional, 999, 1000, 998, 999, 1)
+            };
+            var candles = new Candles(positional, source);
+            var p = candles.Camarilla();
+            var lines = new[] { p.R4, p.R3, p.R2, p.R1, p.S1, p.S2, p.S3, p.S4 };
+            decimal[] expected = { 226, 193, 182, 171, 149, 138, 127, 94 };
+            for (int i = 0; i < lines.Length; i++)
+            {
+                Assert(lines[i][0] == null && lines[i][1] == expected[i]
+                    && lines[i][2] == expected[i] + 20, "Camarilla level, lag and output alignment");
+                Assert(lines[i].Candles == candles, "Camarilla retains source alignment");
+            }
+            Assert(ReferenceEquals(p, candles.Camarilla()), "Camarilla cache reuse");
+            var prefix = new Candles(positional, source.Take(2));
+            Equal(prefix.Camarilla().R4.Values, p.R4.Values[..2], "Camarilla prefix invariance");
+            var instrument = new Instruments(1, "TEST");
+            instrument.SetCandles(positional, source);
+            var operand = new IndicatorOperand(new IndicatorSpec(IndicatorType.Camarilla,
+                positional, Component: IndicatorComponent.R3));
+            var result = operand.Resolve(new EvaluationContext(instrument, source[1].CloseTime));
+            Assert(result.HasValue && result.Value == 193m, "Camarilla rule component resolution");
+        }
+        Throws<ArgumentException>(() => mfiBars.Camarilla());
+        Throws<ArgumentException>(() => CamarillaPivots.Calculate(90, 100, 95));
+        Throws<ArgumentException>(() => CamarillaPivots.Calculate(120, 100, 121));
+        var flat = CamarillaPivots.Calculate(100, 100, 100);
+        Assert(flat.R4 == 100 && flat.S4 == 100, "Camarilla zero range");
+
+        foreach (int length in Enumerable.Range(0, mfiBars.Count + 1))
+        {
+            var prefix = new Candles(tf, mfiBars.Take(length));
+            Equal(prefix.ADL().Values, mfiBars.ADL().Values[..length], "ADL prefix invariance");
+            Equal(prefix.MFI(2).Values, mfiBars.MFI(2).Values[..length], "MFI prefix invariance");
+        }
+        var corrected = new Candles(tf, adlBars.Select((c, i) => i == 0 ? c with { Close = 9 } : c));
+        Assert(corrected.ADL()[0] == -50 && adlBars.ADL()[0] == 50, "Corrected history uses independent cache");
+        var correctedMfi = new Candles(tf, mfiBars.Select((c, i) => i == 1
+            ? c with { Open = 8, High = 8, Low = 8, Close = 8 } : c));
+        Assert(correctedMfi.MFI(2)[2] != mfiBars.MFI(2)[2], "MFI corrected history uses independent cache");
+        Assert(IndicatorRequirements.GetMinimumBars(new IndicatorSpec(IndicatorType.ADL)) == 1, "ADL history requirement");
+        Assert(IndicatorRequirements.GetMinimumBars(new IndicatorSpec(IndicatorType.MFI, Period1: 2)) == 3, "MFI history requirement");
+        Assert(IndicatorRequirements.GetMinimumBars(new IndicatorSpec(IndicatorType.Camarilla)) == 2, "Camarilla history requirement");
+        VerifyScannerRequirements();
+        Console.WriteLine($"Passed {assertions} Stage1 ADL, MFI and Camarilla assertions.");
+    }
+
+    private void VerifyScannerRequirements()
+    {
+        var scanner = new Scanner("New indicator dependencies")
+        {
+            TimeFrameInheritable = true, RootTimeFrame = Timeframe.Minutes(15)
+        };
+        scanner.BullishConditions.Add(Rule.Create(new IndicatorOperand(
+            new IndicatorSpec(IndicatorType.ADL)), RuleOperator.GreaterThan, 0m));
+        scanner.BullishConditions.Add(Rule.Create(new IndicatorOperand(
+            new IndicatorSpec(IndicatorType.MFI, Period1: 14), Offset: 2), RuleOperator.GreaterThan, 50m));
+        scanner.BullishConditions.Add(Rule.Create(new IndicatorOperand(
+            new IndicatorSpec(IndicatorType.Camarilla, Timeframe.Day, Component: IndicatorComponent.S4)),
+            RuleOperator.GreaterThan, 0m));
+        var requirements = scanner.GetRequirements();
+        Assert(requirements.MinimumBarsRequired[Timeframe.Minutes(15)] == 17, "MFI warmup plus offset dependency");
+        Assert(requirements.MinimumBarsRequired[Timeframe.Day] == 2, "Camarilla positional dependency");
+        var invalid = new Scanner("Invalid intraday Camarilla") { TimeFrameInheritable = true, RootTimeFrame = Timeframe.Minutes(15) };
+        invalid.BullishConditions.Add(Rule.Create(new IndicatorOperand(
+            new IndicatorSpec(IndicatorType.Camarilla, Component: IndicatorComponent.R1)), RuleOperator.GreaterThan, 0m));
+        Throws<InvalidOperationException>(() => invalid.GetRequirements());
+        var daily = new Candles(Timeframe.Day, new[]
+        {
+            Bar(0, Timeframe.Day, 220, 100, 160, 1),
+            Candle.Create(Start.AddDays(1), Timeframe.Day, 180, 240, 120, 180, 1)
+        });
+        var instrument = new Instruments(3, "PIVOTS");
+        instrument.SetCandles(Timeframe.Day, daily);
+        IndicatorComponent[] components = { IndicatorComponent.R4, IndicatorComponent.R3, IndicatorComponent.R2,
+            IndicatorComponent.R1, IndicatorComponent.S1, IndicatorComponent.S2, IndicatorComponent.S3, IndicatorComponent.S4 };
+        decimal[] expected = { 226, 193, 182, 171, 149, 138, 127, 94 };
+        for (int i = 0; i < components.Length; i++)
+        {
+            var operand = new IndicatorOperand(new IndicatorSpec(IndicatorType.Camarilla,
+                Timeframe.Day, Component: components[i]));
+            Assert(!operand.Resolve(new EvaluationContext(instrument, daily[0].CloseTime)).HasValue,
+                "Camarilla warmup remains unknown even with future rows");
+            var value = operand.Resolve(new EvaluationContext(instrument, daily[1].CloseTime));
+            Assert(value.HasValue && value.Value == expected[i], "Every Camarilla rule selector maps correctly");
+        }
+        Throws<ArgumentException>(() => new IndicatorOperand(new IndicatorSpec(IndicatorType.Camarilla, Timeframe.Day))
+            .Resolve(new EvaluationContext(instrument, daily[1].CloseTime)));
+    }
+
+    private static Candle Bar(int index, Timeframe tf, decimal high, decimal low, decimal close, decimal volume)
+        => Candle.Create(Start.AddMinutes(15 * index), tf, close, high, low, close, volume);
+    private static Candles Prices(params decimal[] prices)
+        => new(Timeframe.Minutes(15), prices.Select((c, i) => Bar(i, Timeframe.Minutes(15), c, c, c, i + 1)));
+    private void Assert(bool condition, string message)
+    {
+        assertions++;
+        if (!condition) throw new Exception(message);
+    }
+    private void Equal(decimal?[] actual, decimal?[] expected, string message)
+        => Assert(actual.SequenceEqual(expected), message);
+    private void Throws<T>(Action action) where T : Exception
+    {
+        try { action(); }
+        catch (T) { assertions++; return; }
+        throw new Exception($"Expected {typeof(T).Name}.");
+    }
+}

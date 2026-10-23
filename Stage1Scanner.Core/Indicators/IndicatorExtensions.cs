@@ -1,5 +1,6 @@
 using Stage1Scanner.Core.Market;
 using Stage1Scanner.Core.Rules;
+using Stage1Scanner.Core.Pivots;
 using Stage1Scanner.Core.Series;
 
 namespace Stage1Scanner.Core.Indicators;
@@ -826,6 +827,85 @@ public static class IndicatorExtensions
             };
         });
     }
+
+    /// <summary>Cumulative money-flow volume. A zero-range candle contributes zero.</summary>
+    public static NumericSeries ADL(this Candles candles)
+        => IndicatorCache.GetOrCreate(candles, "ADL", () =>
+        {
+            var output = new decimal?[candles.Count];
+            decimal total = 0m;
+            for (int i = 0; i < candles.Count; i++)
+            {
+                var c = candles[i];
+                decimal range = c.High - c.Low;
+                if (range != 0m)
+                    total += ((c.Close - c.Low) - (c.High - c.Close)) / range * c.Volume;
+                output[i] = total;
+            }
+            return new NumericSeries(candles, output, "ADL");
+        });
+
+    /// <summary>
+    /// Rolling money flow classified by typical-price changes. First output is at index period.
+    /// Equal typical prices contribute neither flow; no directional flow produces null.
+    /// </summary>
+    public static NumericSeries MFI(this Candles candles, int period = 14)
+        => IndicatorCache.GetOrCreate(candles, $"MFI|{period}", () =>
+        {
+            ValidatePeriod(period);
+            var output = new decimal?[candles.Count];
+            var positive = new decimal[candles.Count];
+            var negative = new decimal[candles.Count];
+            decimal positiveSum = 0m, negativeSum = 0m;
+            decimal Typical(int i) => (candles[i].High + candles[i].Low + candles[i].Close) / 3m;
+            for (int i = 1; i < candles.Count; i++)
+            {
+                decimal typical = Typical(i), previous = Typical(i - 1);
+                decimal flow = typical * candles[i].Volume;
+                if (typical > previous) positive[i] = flow;
+                else if (typical < previous) negative[i] = flow;
+                positiveSum += positive[i];
+                negativeSum += negative[i];
+                if (i > period)
+                {
+                    positiveSum -= positive[i - period];
+                    negativeSum -= negative[i - period];
+                }
+                if (i >= period)
+                    output[i] = negativeSum == 0m ? positiveSum == 0m ? null : 100m
+                        : 100m - 100m / (1m + positiveSum / negativeSum);
+            }
+            return new NumericSeries(candles, output, $"MFI({period})");
+        });
+
+    /// <summary>
+    /// Each D/W/M candle receives levels from its preceding completed source candle.
+    /// First output is null. Intraday callers must supply completed positional source candles
+    /// and project the levels to their session; partial intraday history is not aggregated here.
+    /// </summary>
+    public static CamarillaSeries Camarilla(this Candles candles)
+        => IndicatorCache.GetOrCreate(candles, "CAMARILLA", () =>
+        {
+            if (candles.Timeframe != Timeframe.Day && candles.Timeframe != Timeframe.Week
+                && candles.Timeframe != Timeframe.Month)
+                throw new ArgumentException("Camarilla requires completed 1D, 1W or 1M source candles.", nameof(candles));
+            var values = Enumerable.Range(0, 8).Select(_ => new decimal?[candles.Count]).ToArray();
+            for (int i = 1; i < candles.Count; i++)
+            {
+                var source = candles[i - 1];
+                var p = CamarillaPivots.Calculate(source.High, source.Low, source.Close);
+                values[0][i] = p.R4; values[1][i] = p.R3;
+                values[2][i] = p.R2; values[3][i] = p.R1;
+                values[4][i] = p.S1; values[5][i] = p.S2;
+                values[6][i] = p.S3; values[7][i] = p.S4;
+            }
+            NumericSeries Line(int index, string name) => new(candles, values[index], $"Camarilla.{name}");
+            return new CamarillaSeries
+            {
+                R4 = Line(0, "R4"), R3 = Line(1, "R3"), R2 = Line(2, "R2"), R1 = Line(3, "R1"),
+                S1 = Line(4, "S1"), S2 = Line(5, "S2"), S3 = Line(6, "S3"), S4 = Line(7, "S4")
+            };
+        });
 
     private static NumericSeries RollingExtreme(
         Candles candles,

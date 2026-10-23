@@ -29,7 +29,15 @@ public enum IndicatorComponent
     // RsiSmooth     = smoothed RSI line (requires Smoothing to be set).
     // RsiDivergence = +1 on bullish divergence, -1 on bearish, 0 otherwise.
     RsiSmooth,
-    RsiDivergence
+    RsiDivergence,
+    R1,
+    R2,
+    R3,
+    R4,
+    S1,
+    S2,
+    S3,
+    S4
 }
 
 /// <summary>

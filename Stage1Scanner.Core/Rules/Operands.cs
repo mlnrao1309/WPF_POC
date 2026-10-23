@@ -214,6 +214,9 @@ public sealed record IndicatorOperand(
             IndicatorType.ATR => candles.ATR(spec.Period1),
             IndicatorType.VWAP => candles.VWAP(),
             IndicatorType.OBV => candles.OBV(),
+            IndicatorType.ADL => candles.ADL(),
+            IndicatorType.MFI => candles.MFI(spec.Period1),
+            IndicatorType.Camarilla => ResolveCamarilla(candles, spec),
             IndicatorType.CCI => candles.CCI(spec.Period1),
             IndicatorType.VolumeSMA => candles.VolumeSMA(spec.Period1),
             IndicatorType.High52W => candles.High52W(spec.Period1 > 0 ? spec.Period1 : 252),
@@ -472,6 +475,23 @@ public sealed record IndicatorOperand(
             IndicatorComponent.Upper => result.Upper,
             IndicatorComponent.Lower => result.Lower,
             _ => result.Basis
+        };
+    }
+
+    private static NumericSeries ResolveCamarilla(Candles candles, IndicatorSpec spec)
+    {
+        var result = candles.Camarilla();
+        return spec.Component switch
+        {
+            IndicatorComponent.R4 => result.R4,
+            IndicatorComponent.R3 => result.R3,
+            IndicatorComponent.R2 => result.R2,
+            IndicatorComponent.R1 => result.R1,
+            IndicatorComponent.S1 => result.S1,
+            IndicatorComponent.S2 => result.S2,
+            IndicatorComponent.S3 => result.S3,
+            IndicatorComponent.S4 => result.S4,
+            _ => throw new ArgumentException("Camarilla requires an R1-R4 or S1-S4 component.", nameof(spec))
         };
     }
 

@@ -43,7 +43,10 @@ public enum IndicatorType
     Momentum,
     TRIX,
     Keltner,
-    Donchian
+    Donchian,
+    ADL,
+    MFI,
+    Camarilla
 }
 
 public enum MovingAverageType

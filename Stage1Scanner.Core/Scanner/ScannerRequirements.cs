@@ -253,6 +253,9 @@ public static class ScannerRequirementAnalyzer
 
                 var warmup = IndicatorRequirements.GetMinimumBars(
                     indicator.Spec);
+                if (indicator.Spec.Kind == IndicatorType.Camarilla
+                    && !PivotResolver.IsTraditionalPivotTimeframe(timeframe))
+                    throw new InvalidOperationException("Camarilla requires a completed 1D, 1W or 1M source timeframe.");
 
                 Register(
                     requirements,
@@ -402,6 +405,9 @@ public static class IndicatorRequirements
             IndicatorType.Supertrend => P(spec.Period1, 10),
             IndicatorType.VWAP => 1,
             IndicatorType.OBV => 1,
+            IndicatorType.ADL => 1,
+            IndicatorType.MFI => checked(p1 + 1),
+            IndicatorType.Camarilla => 2,
 
             IndicatorType.Stochastic => checked(
                 P(spec.Period1, 14) + P(spec.Period2, 3) - 1),

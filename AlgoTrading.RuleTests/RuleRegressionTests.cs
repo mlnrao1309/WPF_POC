@@ -259,15 +259,15 @@ internal sealed class RuleRegressionTests
             variedPrices[index] = 100m + index % 9 * 3 - index % 4 * 2;
         }
 
-        CompletedCandle[] allCandles = Series("15 minute", 15, variedPrices);
+        CompletedCandle[] allCandles = Series("15minute", 15, variedPrices);
         foreach (IndicatorFunction function in Enum.GetValues<IndicatorFunction>())
         {
-            IndicatorValue indicator = new IndicatorValue(function, "15 minute", 5, Multiplier: 2);
+            IndicatorValue indicator = new IndicatorValue(function, "15minute", 5, Multiplier: 2);
             ComparisonCondition comparison = new ComparisonCondition(indicator, ComparisonOperator.GreaterThan, new NumberValue(100));
-            BoundRuleExecution completeExecution = Bound(comparison).BindData(Market(("15 minute", allCandles)));
+            BoundRuleExecution completeExecution = Bound(comparison, "15minute").BindData(Market(("15minute", allCandles)));
             for (int candleCount = 10; candleCount <= 60; candleCount += 10)
             {
-                BoundRuleExecution prefixExecution = Bound(comparison).BindData(Market(("15 minute", allCandles.Take(candleCount).ToArray())));
+                BoundRuleExecution prefixExecution = Bound(comparison, "15minute").BindData(Market(("15minute", allCandles.Take(candleCount).ToArray())));
                 System.DateTimeOffset timestamp = origin.AddMinutes(candleCount * 15);
                 Assert(completeExecution.Evaluate(timestamp) == prefixExecution.Evaluate(timestamp), "Indicator must be causal: " + function);
             }

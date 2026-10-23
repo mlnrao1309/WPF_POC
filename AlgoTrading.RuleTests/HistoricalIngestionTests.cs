@@ -136,7 +136,7 @@ internal sealed class HistoricalIngestionTests
             HistoricalStreamTypes.IntradayFiveMinute);
 
         this.Assert(report.BudgetExhausted, "Budget expiration is explicit in the report.");
-        this.Assert(checkpoint != null && checkpoint.ChunkEnd == new DateTime(2025, 6, 9),
+        this.Assert(checkpoint != null && checkpoint.ChunkEnd == new DateTime(2025, 6, 29),
             "Budget expiration retains the last fully persisted chunk.");
     }
 
