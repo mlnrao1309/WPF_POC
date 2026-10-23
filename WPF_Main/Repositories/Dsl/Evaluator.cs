@@ -4,8 +4,14 @@ public sealed class Evaluator
 {
     private readonly IReadOnlyDictionary<string, Func<IReadOnlyList<Series>, int, Series>> _functions;
 
-    public Evaluator(IReadOnlyDictionary<string, Func<IReadOnlyList<Series>, int, Series>> functions)
-        => _functions = functions;
+    private readonly IndicatorEvaluationCache? _indicatorCache;
+
+    public Evaluator(IReadOnlyDictionary<string, Func<IReadOnlyList<Series>, int, Series>> functions,
+        IndicatorEvaluationCache? indicatorCache = null)
+    {
+        _functions = functions;
+        _indicatorCache = indicatorCache;
+    }
 
     public Series EvalSeries(Expr e, EvalEnv env) => (Series)Eval(e, env);
 
@@ -196,6 +202,6 @@ public sealed class Evaluator
             throw new InvalidOperationException($"Unknown function '{c.Name}'.");
 
         var args = c.Args.Select(a => EvalSeries(a, env)).ToList();
-        return fn(args, env.Length);
+        return _indicatorCache == null ? fn(args, env.Length) : _indicatorCache.Evaluate(c, args, fn);
     }
 }

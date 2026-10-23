@@ -27,15 +27,21 @@ public static class FlatFileManager
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
             Directory.CreateDirectory(directory);
 
-        string tempPath = filePath + ".tmp";
+        string tempPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
 
-        await using (var stream = File.Create(tempPath))
+        try
         {
-            await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, ct);
+            await using (var stream = File.Create(tempPath))
+            {
+                await JsonSerializer.SerializeAsync(stream, snapshot, JsonOptions, ct);
+            }
+            ct.ThrowIfCancellationRequested();
+            File.Move(tempPath, filePath, overwrite: true);
         }
-
-        // Atomic swap
-        File.Move(tempPath, filePath, overwrite: true);
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
     }
 
     public static async Task<SnapshotFile?> LoadSnapshotAsync(string filePath, CancellationToken ct = default)
@@ -47,7 +53,7 @@ public static class FlatFileManager
             await using var stream = File.OpenRead(filePath);
             return await JsonSerializer.DeserializeAsync<SnapshotFile>(stream, JsonOptions, ct);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or KeyNotFoundException or ArgumentException or InvalidOperationException or FormatException)
         {
             System.Diagnostics.Debug.WriteLine($"Corrupt snapshot file {filePath}: {ex.Message}");
             return null;

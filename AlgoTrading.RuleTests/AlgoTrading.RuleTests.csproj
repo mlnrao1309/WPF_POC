@@ -18,17 +18,22 @@
     <ProjectReference Include="..\AlgoTrading.DataAccess\AlgoTrading.DataAccess.csproj" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="..\Repositories\Dsl\Ast.cs" Link="Screener\Ast.cs" />
-    <Compile Include="..\Repositories\Dsl\Lexer.cs" Link="Screener\Lexer.cs" />
-    <Compile Include="..\Repositories\Dsl\Parser.cs" Link="Screener\Parser.cs" />
-    <Compile Include="..\Repositories\Dsl\QueryHistoryRequirements.cs" Link="Screener\QueryHistoryRequirements.cs" />
-    <Compile Include="..\Repositories\Dsl\Indicators.cs" Link="Screener\Indicators.cs" />
-    <Compile Include="..\Repositories\Dsl\Series.cs" Link="Screener\Series.cs" />
-    <Compile Include="..\Repositories\Dsl\Tok.cs" Link="Screener\Tok.cs" />
-    <Compile Include="..\Repositories\Dsl\DslGrammar.cs" Link="Screener\DslGrammar.cs" />
-    <Compile Include="..\Screener\ScreenerExecutionPlan.cs" Link="Screener\ScreenerExecutionPlan.cs" />
-    <Compile Include="..\Screener\ScreenerExecutionPlanBuilder.cs" Link="Screener\ScreenerExecutionPlanBuilder.cs" />
-    <Compile Include="..\Screener\ScreenerPlanStore.cs" Link="Screener\ScreenerPlanStore.cs" />
-    <Compile Include="..\Screener\ScreenerPaths.cs" Link="Screener\ScreenerPaths.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Ast.cs" Link="Screener\Ast.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Lexer.cs" Link="Screener\Lexer.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Parser.cs" Link="Screener\Parser.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\QueryHistoryRequirements.cs" Link="Screener\QueryHistoryRequirements.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Indicators.cs" Link="Screener\Indicators.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Functions.cs" Link="Screener\Functions.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Evaluator.cs" Link="Screener\Evaluator.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\EvalEnv.cs" Link="Screener\EvalEnv.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\SymbolValue.cs" Link="Screener\SymbolValue.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\IndicatorEvaluationCache.cs" Link="Screener\IndicatorEvaluationCache.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Series.cs" Link="Screener\Series.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\Tok.cs" Link="Screener\Tok.cs" />
+    <Compile Include="..\WPF_Main\Repositories\Dsl\DslGrammar.cs" Link="Screener\DslGrammar.cs" />
+    <Compile Include="..\WPF_Main\Screener\ScreenerExecutionPlan.cs" Link="Screener\ScreenerExecutionPlan.cs" />
+    <Compile Include="..\WPF_Main\Screener\ScreenerExecutionPlanBuilder.cs" Link="Screener\ScreenerExecutionPlanBuilder.cs" />
+    <Compile Include="..\WPF_Main\Screener\ScreenerPlanStore.cs" Link="Screener\ScreenerPlanStore.cs" />
+    <Compile Include="..\WPF_Main\Screener\ScreenerPaths.cs" Link="Screener\ScreenerPaths.cs" />
   </ItemGroup>
 </Project>

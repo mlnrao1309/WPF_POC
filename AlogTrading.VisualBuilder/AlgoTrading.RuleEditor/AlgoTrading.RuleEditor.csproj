@@ -13,6 +13,11 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <None Remove="AlgoTrading.RuleEditor.csproj.bak" />
+    <None Remove="app.manifest" />
+    <None Remove="README.md" />
+  </ItemGroup>
+  <ItemGroup>
     <Content Include="..\Library\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>

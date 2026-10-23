@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using Microsoft.Data.SqlClient;
 using Dapper;
 using Stage1Scanner.Core.Market;
@@ -98,30 +98,32 @@ public class WarmupRepository : IWarmupRepository
         {
             if (!instrumentDict.TryGetValue(group.Key, out var inst)) continue;
 
-            foreach (var p in group)
+            foreach (var p in group.OrderBy(p => p.TimeStamp))
             {
-                var tf = p.TimeFrame == "W" ? new Timeframe(TimeframeUnit.Week, 1) : new Timeframe(TimeframeUnit.Day, 1);
-                var timeStr = p.TimeFrame; // "D" or "W"
+                var tf = p.TimeFrame.Trim() == "W" ? new Timeframe(TimeframeUnit.Week, 1) : new Timeframe(TimeframeUnit.Day, 1);
+                var timeStr = p.TimeFrame.Trim(); // "D" or "W"
+
+                var sourceTime = AlgoTrading.Models.MarketTimestamp.FromDatabase(p.TimeStamp);
 
                 // --- A. Map Standard Pivots to CriticalLevel ---
                 // Format: Id = "D.R1", "W.PP", etc.
-                AddLevel(inst, tf, timeStr, "PP", CriticalRole.Pivot, p.TimeStamp, p.PP);
-                AddLevel(inst, tf, timeStr, "R1", CriticalRole.Resistance, p.TimeStamp, p.R1);
-                AddLevel(inst, tf, timeStr, "R2", CriticalRole.Resistance, p.TimeStamp, p.R2);
-                AddLevel(inst, tf, timeStr, "R3", CriticalRole.Resistance, p.TimeStamp, p.R3);
-                AddLevel(inst, tf, timeStr, "R4", CriticalRole.Resistance, p.TimeStamp, p.R4);
-                AddLevel(inst, tf, timeStr, "R5", CriticalRole.Resistance, p.TimeStamp, p.R5);
-                AddLevel(inst, tf, timeStr, "S1", CriticalRole.Support, p.TimeStamp, p.S1);
-                AddLevel(inst, tf, timeStr, "S2", CriticalRole.Support, p.TimeStamp, p.S2);
-                AddLevel(inst, tf, timeStr, "S3", CriticalRole.Support, p.TimeStamp, p.S3);
-                AddLevel(inst, tf, timeStr, "S4", CriticalRole.Support, p.TimeStamp, p.S4);
-                AddLevel(inst, tf, timeStr, "S5", CriticalRole.Support, p.TimeStamp, p.S5);
+                AddLevel(inst, tf, timeStr, "PP", CriticalRole.Pivot, sourceTime, p.PP);
+                AddLevel(inst, tf, timeStr, "R1", CriticalRole.Resistance, sourceTime, p.R1);
+                AddLevel(inst, tf, timeStr, "R2", CriticalRole.Resistance, sourceTime, p.R2);
+                AddLevel(inst, tf, timeStr, "R3", CriticalRole.Resistance, sourceTime, p.R3);
+                AddLevel(inst, tf, timeStr, "R4", CriticalRole.Resistance, sourceTime, p.R4);
+                AddLevel(inst, tf, timeStr, "R5", CriticalRole.Resistance, sourceTime, p.R5);
+                AddLevel(inst, tf, timeStr, "S1", CriticalRole.Support, sourceTime, p.S1);
+                AddLevel(inst, tf, timeStr, "S2", CriticalRole.Support, sourceTime, p.S2);
+                AddLevel(inst, tf, timeStr, "S3", CriticalRole.Support, sourceTime, p.S3);
+                AddLevel(inst, tf, timeStr, "S4", CriticalRole.Support, sourceTime, p.S4);
+                AddLevel(inst, tf, timeStr, "S5", CriticalRole.Support, sourceTime, p.S5);
 
                 // --- B. Map Reference Levels (Ref_Resistance / Support) ---
                 if (p.Ref_Resistance.HasValue)
-                    AddLevel(inst, tf, timeStr, "RefR", CriticalRole.Resistance, p.TimeStamp, p.Ref_Resistance.Value);
+                    AddLevel(inst, tf, timeStr, "RefR", CriticalRole.Resistance, sourceTime, p.Ref_Resistance.Value);
                 if (p.Ref_Support.HasValue)
-                    AddLevel(inst, tf, timeStr, "RefS", CriticalRole.Support, p.TimeStamp, p.Ref_Support.Value);
+                    AddLevel(inst, tf, timeStr, "RefS", CriticalRole.Support, sourceTime, p.Ref_Support.Value);
 
                 // --- C. Map Anchors (Trap Days) ---
                 // If it was a trap day (PPR1 or PPS1), the "StartCandle" is the Anchor.
@@ -133,7 +135,7 @@ public class WarmupRepository : IWarmupRepository
                         inst.Structures.SetAnchor(new Anchor(
                             StructureId: $"{timeStr}.R1",
                             BreakDirection: BreakDirection.Up,
-                            CandleCloseTime: p.TimeStamp,
+                            CandleCloseTime: sourceTime,
                             High: p.Ref_StartCandle_High.Value,
                             Low: p.Ref_StartCandle_Low.Value
                         ));
@@ -144,7 +146,7 @@ public class WarmupRepository : IWarmupRepository
                         inst.Structures.SetAnchor(new Anchor(
                             StructureId: $"{timeStr}.S1",
                             BreakDirection: BreakDirection.Down,
-                            CandleCloseTime: p.TimeStamp,
+                            CandleCloseTime: sourceTime,
                             High: p.Ref_StartCandle_High.Value,
                             Low: p.Ref_StartCandle_Low.Value
                         ));
@@ -153,18 +155,19 @@ public class WarmupRepository : IWarmupRepository
                 // --- D. Map References (If needed) ---
                 // The Reference object captures a full OHLC snapshot. 
                 // If the "Ref_StartCandle" is what the rules refer to, map it here.
-                if (p.Ref_StartCandle_Open.HasValue)
+                if (p.Ref_StartCandle_Open.HasValue && p.Ref_StartCandle_High.HasValue
+                    && p.Ref_StartCandle_Low.HasValue && p.Ref_StartCandle_Close.HasValue)
                 {
                     inst.References.Set(new Reference(
                         Id: $"{timeStr}.TrapRef",
                         Timeframe: tf,
-                        BarOpenTime: p.TimeStamp, // Approximate, adjust if you have exact open time
-                        BarCloseTime: p.TimeStamp,
+                        BarOpenTime: sourceTime, // Approximate, adjust if you have exact open time
+                        BarCloseTime: sourceTime,
                         Open: p.Ref_StartCandle_Open.Value,
                         High: p.Ref_StartCandle_High!.Value,
                         Low: p.Ref_StartCandle_Low!.Value,
                         Close: p.Ref_StartCandle_Close!.Value,
-                        CapturedAtEvaluationTime: p.TimeStamp
+                        CapturedAtEvaluationTime: sourceTime
                     ));
                 }
             }

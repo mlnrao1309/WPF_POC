@@ -68,8 +68,16 @@ public class MarketWatchRepository : IMarketWatchRepository
     public async Task<int> InsertBatchIfNotExistsAsync(
         IEnumerable<MarketWatch> items, CancellationToken ct = default)
     {
-        var list = items?.ToList() ?? new List<MarketWatch>();
+        // Deduplicate before EF tracks entities with the same composite key.
+        var list = items?.DistinctBy(x => (x.WatchId, x.Name, x.InstrumentToken)).ToList()
+            ?? new List<MarketWatch>();
         if (list.Count == 0) return 0;
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+        // Serialize check-and-insert across application instances, not just threads in this process.
+        await _context.Database.ExecuteSqlInterpolatedAsync($@"DECLARE @result int;
+EXEC @result = sys.sp_getapplock @Resource = {"MarketWatch.InsertBatch"}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000;
+IF @result < 0 THROW 50000, 'Could not acquire the batch insert lock.', 1;", ct);
 
         // Query existing keys (ignore the soft-delete filter)
         var watchIds = list.Select(x => x.WatchId).Distinct().ToList();
@@ -101,7 +109,9 @@ public class MarketWatchRepository : IMarketWatchRepository
         if (toInsert.Count == 0) return 0;
 
         await _context.MarketWatches.AddRangeAsync(toInsert, ct);
-        return await _context.SaveChangesAsync(ct);
+        int inserted = await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return inserted;
     }
 
     // ---------------------------------------------------------------

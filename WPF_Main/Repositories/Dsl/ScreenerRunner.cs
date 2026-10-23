@@ -37,7 +37,7 @@ public sealed class ScreenerRunner : IScreenerRunner
         System.Diagnostics.Debug.WriteLine($"[Screener] In-Memory Universe={universe.Count}");
         if (universe.Count == 0) return Array.Empty<ScreenerRow>();
 
-        var eval = new Evaluator(_functions);
+        // Each instrument/query/timeframe retains its own indicator continuation state.
         var results = new List<ScreenerRow>?[universe.Count];
 
         // 2. Setup Parallel Loop
@@ -61,6 +61,7 @@ public sealed class ScreenerRunner : IScreenerRunner
                 var bars = MapToBars(inst, coreTimeframe);
                 if (bars.Count == 0) return;
 
+                var eval = new Evaluator(_functions, _queryCache.GetIndicators(query, inst.InstrumentToken, coreTimeframe.ToString()));
                 results[i] = EvaluateSymbol(query, inst.InstrumentToken, inst.Symbol, bars, eval, request.TimeFrame);
             });
         }

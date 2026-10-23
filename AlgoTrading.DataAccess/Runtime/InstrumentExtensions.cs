@@ -1,4 +1,4 @@
-﻿using Stage1Scanner.Core.Market;
+using Stage1Scanner.Core.Market;
 
 namespace AlgoTrading.DataAccess.Runtime;
 
@@ -12,10 +12,11 @@ public static class InstrumentExtensions
                 ? current.ToList()
                 : new List<Candle>();
 
-            // 1. Check if we are updating the live candle
-            if (existing.Count > 0 && existing[^1].CloseTime == newCandle.CloseTime)
+            // Corrections replace any matching candle, including one older than the tail.
+            int index = existing.FindIndex(c => c.CloseTime == newCandle.CloseTime);
+            if (index >= 0)
             {
-                existing[^1] = newCandle;
+                existing[index] = newCandle;
             }
             // 2. Append new candle
             else if (existing.Count == 0 || existing[^1].CloseTime < newCandle.CloseTime)

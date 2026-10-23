@@ -1,4 +1,4 @@
-﻿using AlgoTrading.DataAccess.Calendar;
+using AlgoTrading.DataAccess.Calendar;
 using AlgoTrading.DataAccess.Etl;
 using AlgoTrading.DataAccess.Historical;
 using AlgoTrading.DataAccess.Infrastructure;
@@ -20,6 +20,7 @@ using Microsoft.Extensions.Hosting;
 using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
+using System.Threading.Tasks;
 using System.Windows;
 
 namespace AlgoTrading
@@ -117,7 +118,9 @@ namespace AlgoTrading
 
                     services.AddSingleton<ITradingCalendarRepository>(new SqlTradingCalendarRepository(connectionString, commandTimeoutSeconds: 30));
                     services.AddSingleton<ITradingCalendarProvider, RepositoryTradingCalendarProvider>();
-                    services.AddSingleton(provider => new SqlHistoricalIngestionRepository(connectionString, provider.GetRequiredService<IInstrumentRegistry>()));
+                    services.AddSingleton(provider => new SqlHistoricalIngestionRepository(connectionString,
+                        provider.GetRequiredService<IInstrumentRegistry>(), provider.GetRequiredService<ITradingCalendarRepository>(),
+                        provider.GetRequiredService<TradingCalendarSelection>()));
 
                     IConfigurationSection calendar = configuration.GetSection("TradingCalendar");
                     services.AddSingleton(new TradingCalendarSelection(
@@ -136,8 +139,16 @@ namespace AlgoTrading
 
                     // Registry & Background Services
                     services.AddSingleton<IInstrumentRegistry, InstrumentRegistry>();
-                    services.AddSingleton<ILiveMarketDataProvider, MockLiveMarketDataProvider>();
-                    services.AddHostedService<LivePollingService>();
+                    // Real data continues through the existing historical polling workflow.
+                    // The mock stream is enabled only when explicitly selected for development.
+                    string liveMode = configuration["MarketData:LiveMode"] ?? "HistoricalPolling";
+                    if (liveMode.Equals("Mock", StringComparison.OrdinalIgnoreCase))
+                    {
+                        services.AddSingleton<ILiveMarketDataProvider, MockLiveMarketDataProvider>();
+                        services.AddHostedService<LivePollingService>();
+                    }
+                    else if (!liveMode.Equals("HistoricalPolling", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("MarketData:LiveMode must be HistoricalPolling or Mock.");
 
                     services.AddScoped<IInstrumentImportService, InstrumentImportService>();
                 })
@@ -151,30 +162,70 @@ namespace AlgoTrading
             // --- 3. Startup Data Initialization (Flat File / ETL) ---
             try
             {
+                // Validate prerequisites before starting any dependent hosted service.
+                using (IServiceScope scope = _serviceProvider.CreateScope())
+                {
+                    await _serviceProvider.GetRequiredService<IPlatformConfigurationRuntime>()
+                        .InitializeAsync(scope.ServiceProvider.GetRequiredService<IPlatformConfigurationProvider>());
+                }
+                var dependencies = new ScannerDependencyRegistry();
+                dependencies.LoadFromDirectory(scannerFolder);
+                var selection = _serviceProvider.GetRequiredService<TradingCalendarSelection>();
+                DateTimeOffset now = DateTimeOffset.UtcNow;
+                var calendar = await _serviceProvider.GetRequiredService<ITradingCalendarRepository>()
+                    .LoadAsync(selection.ExchangeCode, selection.SegmentCode, selection.Revision, now);
+                DateTime marketNow = MarketTimestamp.ToDatabase(now);
+                if (calendar == null || DateOnly.FromDateTime(marketNow) < calendar.FirstDate
+                    || DateOnly.FromDateTime(marketNow) > calendar.LastDate)
+                    throw new InvalidOperationException("The selected trading calendar does not cover the current market date.");
+                DateTime? expectedSession = calendar.Days.Where(day => day.ClosesAt.HasValue
+                        && day.Date.ToDateTime(day.ClosesAt.Value) <= marketNow)
+                    .Select(day => (DateTime?)day.Date.ToDateTime(TimeOnly.MinValue)).Max();
+                if (!expectedSession.HasValue)
+                    throw new InvalidOperationException("The trading calendar has no completed session for warmup validation.");
                 var loader = _serviceProvider.GetRequiredService<SnapshotLoader>();
-                var snapshot = await loader.LoadLatestSnapshotAsync();
+                var snapshot = await loader.LoadLatestSnapshotAsync(expectedFingerprint: dependencies.Fingerprint);
+                Guid calculationGeneration = snapshot.Generation;
 
-                if (snapshot == null || snapshot.Instruments.Count == 0)
+                if (snapshot.Instruments.Count == 0 || snapshot.SnapshotDate.Date < expectedSession.Value.Date)
                 {
                     // ETL FALLBACK
-                    MessageBox.Show("No warmup JSON found. Running ETL for the first time. This may take a minute...", "First Time Setup");
+                    MessageBox.Show("No current warmup snapshot found. Building one from SQL history. This may take a minute...", "First Time Setup");
 
                     var etlService = _serviceProvider.GetRequiredService<WarmupEtlService>();
-                    await etlService.RunWarmupEtlAsync(scannerFolder, resourcesFolder);
+                    await etlService.RunWarmupEtlAsync(scannerFolder, resourcesFolder, calendar: calendar);
 
-                    snapshot = await loader.LoadLatestSnapshotAsync();
-                    if (snapshot == null) throw new Exception("ETL failed to generate snapshot.");
+                    snapshot = await loader.LoadLatestSnapshotAsync(expectedFingerprint: dependencies.Fingerprint);
+                    if (snapshot.Instruments.Count == 0)
+                        throw new InvalidOperationException("ETL did not generate a complete, compatible snapshot. Check source history and scanner requirements.");
+                }
+
+                // Historical data must be loadable before login so the UI can refresh SQL history.
+                if (snapshot.SnapshotDate.Date < expectedSession.Value.Date)
+                {
+                    string message = $"History is available through {snapshot.SnapshotDate:yyyy-MM-dd} for the least-current instrument. "
+                        + $"The latest completed trading session is {expectedSession:yyyy-MM-dd}. "
+                        + "Sign in, refresh historical data, and restart the app before using screening results as current.";
+                    Trace.TraceWarning(message);
+                    MessageBox.Show(message, "Historical data needs refresh", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
 
                 // Initialize Singleton Registry
                 var registry = _serviceProvider.GetRequiredService<IInstrumentRegistry>();
                 registry.Initialize(snapshot);
+                if (calculationGeneration == Guid.Empty) calculationGeneration = snapshot.Generation;
+                string? calculationsFile = Directory.EnumerateFiles(resourcesFolder,
+                    $"ScreenerCalculations_*_{calculationGeneration:N}.json").FirstOrDefault();
+                if (calculationsFile != null)
+                    await Task.Run(() => _serviceProvider.GetRequiredService<QueryCache>()
+                        .LoadCalculationsAsync(calculationsFile, calculationGeneration));
 
                 // Start Background Host (Live Polling)
                 await _host.StartAsync();
             }
             catch (Exception ex)
             {
+                Debug.WriteLine($"Critical error during startup data ingestion: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 MessageBox.Show($"Critical error during startup data ingestion: {ex.Message}", "Startup Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 Shutdown();
                 return;
@@ -182,27 +233,51 @@ namespace AlgoTrading
 
             // --- 4. Show UI ---
             var main = _serviceProvider.GetRequiredService<MainWindow>();
+            bool closeSaved = false;
+            bool closeSaving = false;
+            main.Closing += async (_, closing) =>
+            {
+                if (closeSaved) return;
+                closing.Cancel = true;
+                if (closeSaving) return;
+                closeSaving = true;
+                main.IsEnabled = false;
+                try
+                {
+                    await _serviceProvider.GetRequiredService<MarketWatchViewModel>().StopPollingForShutdownAsync();
+                    await _host.StopAsync();
+                    await Task.Run(async () =>
+                    {
+                        var registry = _serviceProvider.GetRequiredService<IInstrumentRegistry>();
+                        var loader = _serviceProvider.GetRequiredService<SnapshotLoader>();
+                        Guid generation = await loader.SaveLatestSnapshotAsync(registry);
+                        DateTime marketDate = MarketTimestamp.ToDatabase(DateTimeOffset.UtcNow).Date;
+                        string path = Path.Combine(resourcesFolder, $"ScreenerCalculations_{marketDate:yyyyMMdd}_{generation:N}.json");
+                        await _serviceProvider.GetRequiredService<QueryCache>().SaveCalculationsAsync(path, registry, generation);
+                    });
+                    closeSaved = true;
+                    main.Close();
+                }
+                catch (Exception exception)
+                {
+                    Trace.TraceError("Could not save closing snapshot: {0}", exception);
+                    MessageBox.Show(main, $"Could not save history and calculations: {exception.Message}. Close the window again to retry.",
+                        "Save failed", MessageBoxButton.OK, MessageBoxImage.Error);
+                }
+                finally
+                {
+                    closeSaving = false;
+                    main.IsEnabled = true;
+                }
+            };
+
             main.Show();
 
             // --- 5. Existing Background Initialization ---
             ViewModels.WebViewViewModel webViewViewModel = _serviceProvider.GetRequiredService<ViewModels.WebViewViewModel>();
             await webViewViewModel.CalendarLoadTask;
 
-            try
-            {
-                using (IServiceScope scope = _serviceProvider.CreateScope())
-                {
-                    IPlatformConfigurationProvider provider = scope.ServiceProvider.GetRequiredService<IPlatformConfigurationProvider>();
-                    IPlatformConfigurationRuntime runtime = _serviceProvider.GetRequiredService<IPlatformConfigurationRuntime>();
-                    await runtime.InitializeAsync(provider);
-                }
-            }
-            catch (Exception exception)
-            {
-                MessageBox.Show("Background market-data configuration is invalid or unavailable. "
-                    + "Processing was not started.\n\n" + exception.Message,
-                    "Market-data startup failed", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
+
         }
 
         protected override async void OnExit(ExitEventArgs e)

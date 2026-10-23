@@ -22,9 +22,9 @@ public sealed class ScreenerCompletionData : ICompletionData
 
     public void Complete(TextArea area, ISegment segment, EventArgs e)
     {
+        // This now correctly replaces the partial word (e.g., "crossedb")
         area.Document.Replace(segment.Offset, segment.Length, Text);
 
-        // if it's a function, add "()" and place the caret inside
         if (Kind == "function")
         {
             int caret = area.Caret.Offset;

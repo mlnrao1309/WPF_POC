@@ -15,6 +15,7 @@ public sealed class HistoricalDataRepository : IHistoricalDataRepository
 
     public async Task<int> InsertBatchAsync(InstrumentCandleData batch, CancellationToken cancellationToken = default)
     {
+        // This API is insert-only; provider corrections use SqlHistoricalIngestionRepository.
         Candle[] candles = batch.Candles ?? throw new ArgumentException("Candles are required.", nameof(batch));
         if (candles.Length == 0) return 0;
 
@@ -26,6 +27,12 @@ public sealed class HistoricalDataRepository : IHistoricalDataRepository
                 throw new ArgumentException("Every candle must match the batch instrument and timeframe.", nameof(batch));
             unique[MarketTimestamp.ToDatabase(candle.OpenedAt)] = candle;
         }
+
+        await using var transaction = await this.context.Database.BeginTransactionAsync(cancellationToken);
+        // Serialize check-and-insert across application instances, not just threads in this process.
+        await this.context.Database.ExecuteSqlInterpolatedAsync($@"DECLARE @result int;
+EXEC @result = sys.sp_getapplock @Resource = {"Instruments_OHLC.InsertBatch"}, @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000;
+IF @result < 0 THROW 50000, 'Could not acquire the batch insert lock.', 1;", cancellationToken);
 
         DateTime[] timestamps = unique.Keys.ToArray();
         var existing = new HashSet<DateTime>();
@@ -57,7 +64,9 @@ public sealed class HistoricalDataRepository : IHistoricalDataRepository
         if (inserts.Count == 0) return 0;
 
         await this.context.InstrumentOhlc.AddRangeAsync(inserts, cancellationToken);
-        return await this.context.SaveChangesAsync(cancellationToken);
+        int inserted = await this.context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        return inserted;
     }
 
     public async IAsyncEnumerable<InstrumentCandleData> GetPagesAsync(int instrumentToken, string timeframe,

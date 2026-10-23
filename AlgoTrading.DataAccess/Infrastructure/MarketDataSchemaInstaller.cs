@@ -41,6 +41,13 @@ namespace AlgoTrading.DataAccess.Infrastructure
         public async Task InstallAsync(CancellationToken cancellationToken = default)
         {
             Assembly assembly = typeof(MarketDataSchemaInstaller).Assembly;
+            // Check every resource before opening SQL or installing a partial schema.
+            foreach (string name in Scripts)
+            {
+                using Stream? resource = assembly.GetManifestResourceStream(name);
+                if (resource == null)
+                    throw new InvalidOperationException("Schema resource is missing: " + name);
+            }
             await using SqlConnection connection = new SqlConnection(this.connectionString);
             await connection.OpenAsync(cancellationToken);
             for (int index = 0; index < Scripts.Length; index++)

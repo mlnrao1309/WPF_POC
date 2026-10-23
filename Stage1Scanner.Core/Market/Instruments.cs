@@ -23,30 +23,38 @@ public sealed class Instruments
 
     public ReferenceStore References { get; } = new();
 
-    public IEnumerable<Timeframe> AvailableTimeframes => _candles.Keys;
+    public IEnumerable<Timeframe> AvailableTimeframes
+    {
+        get { lock (this) return _candles.Keys.ToArray(); }
+    }
 
     public void SetCandles(Timeframe timeframe, IEnumerable<Candle> candles)
     {
-        _candles[timeframe] = new Candles(timeframe, candles);
+        lock (this) _candles[timeframe] = new Candles(timeframe, candles);
     }
 
     public void SetCandles(Candles candles)
     {
         ArgumentNullException.ThrowIfNull(candles);
-        _candles[candles.Timeframe] = candles;
+        lock (this) _candles[candles.Timeframe] = candles;
     }
 
     public Candles GetCandles(Timeframe timeframe)
     {
-        if (!_candles.TryGetValue(timeframe, out var candles))
+        lock (this)
         {
-            throw new InvalidOperationException(
-                $"No candles loaded for {Symbol} at timeframe {timeframe}.");
-        }
+            if (!_candles.TryGetValue(timeframe, out var candles))
+            {
+                throw new InvalidOperationException(
+                    $"No candles loaded for {Symbol} at timeframe {timeframe}.");
+            }
 
-        return candles;
+            return candles;
+        }
     }
 
     public bool TryGetCandles(Timeframe timeframe, out Candles candles)
-        => _candles.TryGetValue(timeframe, out candles!);
+    {
+        lock (this) return _candles.TryGetValue(timeframe, out candles!);
+    }
 }

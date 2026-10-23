@@ -29,12 +29,13 @@ public class WarmupEtlRepository
         _connectionString = connectionString;
     }
 
-    public async Task<IEnumerable<RawEtlCandleDto>> FetchOneYearHistoryAsync(string timeframe)
+    public async Task<IEnumerable<RawEtlCandleDto>> FetchOneYearHistoryAsync(string timeframe, CancellationToken cancellationToken = default)
     {
         using var connection = new SqlConnection(_connectionString);
 
         // Calculate 1 year back from today
-        DateTime oneYearAgo = DateTime.Today.AddYears(-1);
+        DateTime marketDate = AlgoTrading.Models.MarketTimestamp.ToDatabase(DateTimeOffset.UtcNow).Date;
+        DateTime oneYearAgo = marketDate.AddYears(-1);
 
         // Corrected SQL Query
         const string sql = @"
@@ -50,15 +51,16 @@ public class WarmupEtlRepository
             FROM dbo.vw_InstrumentBars b
             WHERE b.TimeFrame = @TimeFrame 
               AND b.TimeStamp >= @OneYearAgo
-              AND (b.ExpiresOn IS NULL OR b.ExpiresOn >= CAST(GETDATE() AS DATE))
+              AND (b.ExpiresOn IS NULL OR b.ExpiresOn >= @MarketDate)
             ORDER BY b.InstrumentToken, b.TimeStamp ASC;
         ";
 
         // Pass the parameters to Dapper
-        return await connection.QueryAsync<RawEtlCandleDto>(sql, new
+        return await connection.QueryAsync<RawEtlCandleDto>(new CommandDefinition(sql, new
         {
             TimeFrame = timeframe,
-            OneYearAgo = oneYearAgo
-        });
+            OneYearAgo = oneYearAgo,
+            MarketDate = marketDate
+        }, commandTimeout: 120, cancellationToken: cancellationToken));
     }
 }

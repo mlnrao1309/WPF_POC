@@ -25,7 +25,7 @@ public class InstrumentsJsonConverter : JsonConverter<Instruments>
                 var tf = JsonSerializer.Deserialize<Timeframe>(cObj.GetProperty("timeframe").GetRawText(), options);
                 var items = JsonSerializer.Deserialize<Candle[]>(cObj.GetProperty("items").GetRawText(), options);
                 
-                if (tf != null && items != null)
+                if (items != null)
                     inst.SetCandles(tf, items);
             }
         }
@@ -48,6 +48,19 @@ public class InstrumentsJsonConverter : JsonConverter<Instruments>
             {
                 foreach (var r in refs) inst.References.Set(r);
             }
+        }
+
+        if (root.TryGetProperty("anchors", out var anchorsArr))
+        {
+            var anchors = JsonSerializer.Deserialize<Anchor[]>(anchorsArr.GetRawText(), options);
+            if (anchors != null)
+                foreach (var anchor in anchors) inst.Structures.SetAnchor(anchor);
+        }
+        if (root.TryGetProperty("zones", out var zonesArr))
+        {
+            var zones = JsonSerializer.Deserialize<CriticalZone[]>(zonesArr.GetRawText(), options);
+            if (zones != null)
+                foreach (var zone in zones) inst.Structures.Add(zone);
         }
 
         return inst;
@@ -83,6 +96,11 @@ public class InstrumentsJsonConverter : JsonConverter<Instruments>
         writer.WritePropertyName("references");
         JsonSerializer.Serialize(writer, value.References.All.ToArray(), options);
 
+        // Anchors and zones are part of the same rule state as levels and references.
+        writer.WritePropertyName("anchors");
+        JsonSerializer.Serialize(writer, value.Structures.Anchors.ToArray(), options);
+        writer.WritePropertyName("zones");
+        JsonSerializer.Serialize(writer, value.Structures.Zones.ToArray(), options);
         writer.WriteEndObject();
     }
 }

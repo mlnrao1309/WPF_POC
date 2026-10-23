@@ -1,5 +1,6 @@
 using Stage1Scanner.Core.Market;
 using AlgoTrading.DataAccess.Runtime;
+using AlgoTrading.DataAccess.Etl;
 
 namespace AlgoTrading.DataAccess.Repositories
 {
@@ -11,72 +12,98 @@ namespace AlgoTrading.DataAccess.Repositories
         
         // Returns a dictionary of outputs for the indicator
         // e.g., Key "Value" -> List<decimal?>, Key "Direction" -> List<decimal?>
-        Dictionary<string, List<decimal?>>? GetIndicatorData(long token, string timeframe, string indicatorName, int period);
+        Dictionary<string, List<decimal?>>? GetIndicatorData(long token, string timeframe, string indicatorName, int period, string inputField = "Close", decimal factor = 3m);
 
-        void UpdateLiveIndicatorSeries(long token, string timeframe, string indicatorName, int period, Dictionary<string, List<decimal?>> newOutputs);
+        void UpdateLiveIndicatorSeries(long token, string timeframe, string indicatorName, int period, Dictionary<string, List<decimal?>> newOutputs, string inputField = "Close", decimal factor = 3m);
     }
 
     public class InstrumentRegistry : IInstrumentRegistry
     {
+        private readonly object _gate = new();
         private Dictionary<long, Instruments> _instruments = new();
-
-        // Key: "{Token}_{Timeframe}_{IndicatorName}_{Period}" -> Value: Output Dict
         private Dictionary<string, Dictionary<string, List<decimal?>>> _indicatorData = new();
+        private readonly Dictionary<string, Candles> _indicatorCandles = new();
 
         public void Initialize(RuntimeSnapshot snapshot)
         {
-            _instruments = snapshot.Instruments;
-
-            // Reconstruct the hierarchical dictionary
+            ArgumentNullException.ThrowIfNull(snapshot);
+            var indicators = new Dictionary<string, Dictionary<string, List<decimal?>>>();
             foreach (var kvp in snapshot.IndicatorSeries)
             {
-                // kvp.Key is like "265_60_SUPERTREND_10_Value"
-                string[] parts = kvp.Key.Split('_');
-                if (parts.Length < 5) continue;
-
-                string baseKey = $"{parts[0]}_{parts[1]}_{parts[2]}_{parts[3]}"; // "265_60_SUPERTREND_10"
-                string outputName = parts[4]; // "Value" or "Direction"
-
-                if (!_indicatorData.TryGetValue(baseKey, out var outputs))
-                {
-                    _indicatorData[baseKey] = outputs = new Dictionary<string, List<decimal?>>();
-                }
-                outputs[outputName] = kvp.Value;
+                int separator = kvp.Key.LastIndexOf('_');
+                if (separator < 0) throw new InvalidDataException("Invalid snapshot indicator key: " + kvp.Key);
+                string key = kvp.Key[..separator];
+                if (!indicators.TryGetValue(key, out var outputs))
+                    indicators[key] = outputs = new Dictionary<string, List<decimal?>>();
+                outputs[kvp.Key[(separator + 1)..]] = kvp.Value.ToList();
+            }
+            lock (_gate)
+            {
+                // Replace both dictionaries; a reload must not retain obsolete indicator entries.
+                _instruments = new Dictionary<long, Instruments>(snapshot.Instruments);
+                _indicatorData = indicators;
+                _indicatorCandles.Clear();
             }
         }
 
         public Instruments? GetByToken(long token)
         {
-            return _instruments.TryGetValue(token, out var inst) ? inst : null;
+            lock (_gate) return _instruments.GetValueOrDefault(token);
         }
 
         public IReadOnlyCollection<Instruments> GetAll()
         {
-            return _instruments.Values.ToList();
+            lock (_gate) return _instruments.Values.ToArray();
         }
 
-        public Dictionary<string, List<decimal?>>? GetIndicatorData(long token, string timeframe, string indicatorName, int period)
+        public Dictionary<string, List<decimal?>>? GetIndicatorData(long token, string timeframe, string indicatorName,
+            int period, string inputField = "Close", decimal factor = 3m)
         {
-            string key = $"{token}_{timeframe}_{indicatorName}_{period}";
-            return _indicatorData.TryGetValue(key, out var outputs) ? outputs : null;
-        }
-
-        // Add this to the IInstrumentRegistry interface
-        // void UpdateLiveIndicatorSeries(long token, string timeframe, string indicatorName, int period, Dictionary<string, List<decimal?>> newOutputs);
-
-        // Add this implementation to the InstrumentRegistry class
-        public void UpdateLiveIndicatorSeries(long token, string timeframe, string indicatorName, int period, Dictionary<string, List<decimal?>> newOutputs)
-        {
-            string baseKey = $"{token}_{timeframe}_{indicatorName}_{period}";
-
-            if (!_indicatorData.TryGetValue(baseKey, out var outputs))
+            var tf = WarmupEtlService.ParseTimeframe(timeframe);
+            string databaseTimeframe = tf.Unit == TimeframeUnit.Minute
+                ? tf.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : tf.ToString();
+            var requirement = new RequiredIndicator { Timeframe = databaseTimeframe,
+                IndicatorName = indicatorName.Trim().ToUpperInvariant(), InputField = Enum.Parse<SourceField>(inputField, ignoreCase: true).ToString(),
+                Period = period, Factor = factor };
+            string key = $"{token}_{databaseTimeframe}_{requirement.UniqueKey}";
+            lock (_gate)
             {
-                _indicatorData[baseKey] = outputs = new Dictionary<string, List<decimal?>>();
+                if (!_instruments.TryGetValue(token, out var instrument) || !_indicatorData.ContainsKey(key)) return null;
+                lock (instrument)
+                {
+                    var candles = instrument.GetCandles(tf);
+                    // An indicator cache entry belongs to one immutable candle collection.
+                    if (!_indicatorCandles.TryGetValue(key, out var source) || !ReferenceEquals(source, candles))
+                    {
+                        _indicatorData[key] = WarmupEtlService.ComputeIndicator(instrument, tf, requirement);
+                        _indicatorCandles[key] = candles;
+                    }
+                    return _indicatorData[key].ToDictionary(x => x.Key, x => x.Value.ToList());
+                }
             }
+        }
 
-            foreach (var kvp in newOutputs)
+        public void UpdateLiveIndicatorSeries(long token, string timeframe, string indicatorName, int period,
+            Dictionary<string, List<decimal?>> newOutputs, string inputField = "Close", decimal factor = 3m)
+        {
+            var tf = WarmupEtlService.ParseTimeframe(timeframe);
+            string databaseTimeframe = tf.Unit == TimeframeUnit.Minute
+                ? tf.Count.ToString(System.Globalization.CultureInfo.InvariantCulture) : tf.ToString();
+            var requirement = new RequiredIndicator { IndicatorName = indicatorName.Trim().ToUpperInvariant(),
+                InputField = Enum.Parse<SourceField>(inputField, ignoreCase: true).ToString(), Period = period, Factor = factor };
+            string key = $"{token}_{databaseTimeframe}_{requirement.UniqueKey}";
+            lock (_gate)
             {
-                outputs[kvp.Key] = kvp.Value; // Overwrites the old list with the newly calculated list
+                if (!_instruments.TryGetValue(token, out var instrument))
+                    throw new KeyNotFoundException($"Instrument {token} is not registered.");
+                lock (instrument)
+                {
+                    var candles = instrument.GetCandles(tf);
+                    if (newOutputs.Values.Any(values => values.Count != candles.Count))
+                        throw new ArgumentException("Indicator outputs must align with the current candles.", nameof(newOutputs));
+                    _indicatorData[key] = newOutputs.ToDictionary(x => x.Key, x => x.Value.ToList());
+                    _indicatorCandles[key] = candles;
+                }
             }
         }
     }

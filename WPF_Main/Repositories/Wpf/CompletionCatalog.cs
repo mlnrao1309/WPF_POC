@@ -39,7 +39,7 @@ public sealed class CompletionCatalog
         new FnSignature("MACDSIGNAL", "MACDSIGNAL(series, fast, slow, signal)"),
         new FnSignature("MACDHIST",   "MACDHIST(series, fast, slow, signal)"),
         new FnSignature("ATR",        "ATR(high, low, close, period)"),
-        new FnSignature("SUPERTREND", "SUPERTREND(high, low, close, period, multiplier)"),
+        new FnSignature("SUPERTREND", "SUPERTREND(period, multiplier) or SUPERTREND(high, low, close, period[, multiplier])"),
         new FnSignature("HIGHEST",    "HIGHEST(series, period)"),
         new FnSignature("LOWEST",     "LOWEST(series, period)"),
         new FnSignature("SUM",        "SUM(series, period)"),

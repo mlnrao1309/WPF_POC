@@ -74,12 +74,12 @@ public sealed class ScreenerTextBox : UserControl
     {
         var provider = new ScreenerCompletionProvider(Catalog);
 
-        // 1. Use _editor.CaretOffset instead of .Caret
-        int caretOffset = _editor.CaretOffset;
+        // 1. Get the current text and caret position
         var text = _editor.Text;
+        var caret = _editor.CaretOffset;
 
         // 2. Find the start of the word being typed
-        int startOffset = caretOffset;
+        int startOffset = caret;
         while (startOffset > 0 && (char.IsLetterOrDigit(text[startOffset - 1]) || text[startOffset - 1] == '_'))
         {
             startOffset--;
@@ -90,8 +90,8 @@ public sealed class ScreenerTextBox : UserControl
         {
             CloseWhenCaretAtBeginning = true,
             Width = 320,
-            StartOffset = startOffset,   // <--- Replaces the word you already typed
-            EndOffset = caretOffset      // <--- Stops at the current cursor
+            StartOffset = startOffset, // <--- THIS IS THE MAGIC FIX
+            EndOffset = caret         // <--- Replaces up to the current cursor
         };
 
         foreach (var item in provider.GetCompletions(_editor.TextArea))

@@ -12,4 +12,5 @@ public class RuntimeSnapshot
     // The pre-calculated indicator series. 
     // Key: "{Token}_{Timeframe}_{IndicatorName}_{Period}" (e.g. "265_60_EMA_5")
     public Dictionary<string, List<decimal?>> IndicatorSeries { get; set; } = new();
+    public Guid Generation { get; set; }
 }

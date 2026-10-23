@@ -5,6 +5,7 @@ public sealed class Parser
 {
     private readonly List<Tok> _t;
     private int _i;
+    private string _sourceVar = string.Empty;
 
     public Parser(string source) => _t = Lexer.Lex(source);
     public static QueryNode Parse(string source) => new Parser(source).ParseQuery();
@@ -38,6 +39,7 @@ public sealed class Parser
     {
         ExpectKw("from");
         var srcVar = ExpectIdent();
+        _sourceVar = srcVar;
         ExpectKw("in");
         var srcColl = ExpectIdent();
 
@@ -306,6 +308,19 @@ public sealed class Parser
                     do { args.Add(ParseExpr()); } while (MatchPunct(","));
                 }
                 ExpectPunct(")");
+                if (Eq(name, "SUPERTREND"))
+                {
+                    // Expand shorthand before dependency analysis and cached evaluation.
+                    if (args.Count == 2)
+                        args.InsertRange(0, new Expr[]
+                        {
+                            new Member(new Ident(_sourceVar), "High"),
+                            new Member(new Ident(_sourceVar), "Low"),
+                            new Member(new Ident(_sourceVar), "Close")
+                        });
+                    else if (args.Count is not (4 or 5))
+                        throw Err("SUPERTREND requires (period, multiplier) or (high, low, close, period[, multiplier])");
+                }
                 return new Call(name, args);
             }
             return new Ident(name);

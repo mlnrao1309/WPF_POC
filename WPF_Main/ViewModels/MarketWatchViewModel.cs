@@ -28,6 +28,8 @@ public sealed class MarketWatchViewModel : BaseViewModel
     private readonly IHistoricalPollingCoordinator _historicalPollingCoordinator;
     private readonly object _pollingGate = new();
     private CancellationTokenSource? _pollingCancellation;
+    private Task _pollingTask = Task.CompletedTask;
+    private bool _shutdownRequested;
     public MarketWatchViewModel(
         Models.AppSettings appSettings,
         IServiceScopeFactory scopeFactory,
@@ -304,6 +306,7 @@ public sealed class MarketWatchViewModel : BaseViewModel
 
             lock (_pollingGate)
             {
+                if (_shutdownRequested) throw new InvalidOperationException("The application is closing.");
                 if (_pollingCancellation != null)
                     throw new InvalidOperationException("Historical polling is already active.");
                 cancellation = new CancellationTokenSource();
@@ -316,7 +319,8 @@ public sealed class MarketWatchViewModel : BaseViewModel
                 PollingStatus = message;
                 AppendHistoricalStatus(message);
             });
-            await _historicalPollingCoordinator.RunAsync(tokens, intervals, progress, cancellation.Token);
+            _pollingTask = _historicalPollingCoordinator.RunAsync(tokens, intervals, progress, cancellation.Token);
+            await _pollingTask;
             PollingStatus = "Historical polling completed.";
         }
         catch (OperationCanceledException)
@@ -339,6 +343,20 @@ public sealed class MarketWatchViewModel : BaseViewModel
                 }
             }
         }
+    }
+
+    public async Task StopPollingForShutdownAsync()
+    {
+        Task polling;
+        lock (_pollingGate)
+        {
+            _shutdownRequested = true;
+            _pollingCancellation?.Cancel();
+            polling = _pollingTask;
+        }
+        try { await polling; }
+        catch (OperationCanceledException) { }
+        catch (Exception exception) { System.Diagnostics.Trace.TraceError("Polling stopped with an error: {0}", exception); }
     }
 
     private Task ExecuteStopPollingAsync()

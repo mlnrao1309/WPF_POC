@@ -1,6 +1,7 @@
 using System.Data;
 using AlgoTrading.DataAccess.Repositories;
 using AlgoTrading.DataAccess.Runtime;
+using AlgoTrading.DataAccess.Calendar;
 using Stage1Scanner.Core.Market;
 using Candle = Stage1Scanner.Core.Market.Candle;
 using System.Globalization;
@@ -20,9 +21,12 @@ namespace AlgoTrading.DataAccess.Historical
     {
         private readonly string connectionString;
         private readonly IInstrumentRegistry? registry;
+        private readonly ITradingCalendarRepository? calendarRepository;
+        private readonly TradingCalendarSelection? calendarSelection;
         private readonly SemaphoreSlim completedCandleGate = new(1, 1);
 
-        public SqlHistoricalIngestionRepository(string connectionString, IInstrumentRegistry? registry = null)
+        public SqlHistoricalIngestionRepository(string connectionString, IInstrumentRegistry? registry = null,
+            ITradingCalendarRepository? calendarRepository = null, TradingCalendarSelection? calendarSelection = null)
         {
             if (string.IsNullOrWhiteSpace(connectionString))
             {
@@ -31,6 +35,8 @@ namespace AlgoTrading.DataAccess.Historical
 
             this.connectionString = connectionString;
             this.registry = registry;
+            this.calendarRepository = calendarRepository;
+            this.calendarSelection = calendarSelection;
         }
 
         public async Task<DateTime?> GetLatestCandleTimestampAsync(long instrumentToken, string databaseTimeframe,
@@ -147,12 +153,39 @@ namespace AlgoTrading.DataAccess.Historical
             string databaseTimeframe = HistoricalStreamTypes.GetDatabaseTimeframe(request.StreamType);
             Timeframe timeframe = databaseTimeframe == "D" ? Timeframe.Day
                 : Timeframe.Minutes(int.Parse(databaseTimeframe, CultureInfo.InvariantCulture));
+            ExchangeCalendarSnapshot? calendar = null;
+            if (instrument != null && this.calendarRepository != null && this.calendarSelection != null)
+                calendar = await this.calendarRepository.LoadAsync(this.calendarSelection.ExchangeCode,
+                    this.calendarSelection.SegmentCode, this.calendarSelection.Revision, DateTimeOffset.UtcNow, cancellationToken)
+                    ?? throw new InvalidOperationException("The selected trading calendar is unavailable for runtime publication.");
+            var sessionDays = calendar?.Days.ToDictionary(day => day.Date);
             Candle[]? completed = instrument == null ? null : candles.AsEnumerable().Select(row => Candle.Create(
                 MarketTimestamp.FromDatabase(row.Field<DateTime>("TimeStamp")), timeframe,
                 row.Field<decimal>("Open"), row.Field<decimal>("High"), row.Field<decimal>("Low"),
                 row.Field<decimal>("Close"), row.Field<long>("Volume"), row.Field<long>("OI")))
+                .Select(candle =>
+                {
+                    // Match warmup: a daily bar and a shortened final bar close at the exchange session end.
+                    if (sessionDays != null && sessionDays.TryGetValue(DateOnly.FromDateTime(candle.OpenTime.Date), out var session))
+                    {
+                        if (!session.ClosesAt.HasValue)
+                            throw new InvalidDataException($"History contains a candle on closed trading date {candle.OpenTime:d}.");
+                        DateTimeOffset close = MarketTimestamp.FromDatabase(session.Date.ToDateTime(session.ClosesAt.Value));
+                        if (timeframe == Timeframe.Day || candle.CloseTime > close)
+                            candle = candle with { CloseTime = close };
+                    }
+                    return candle;
+                })
                 .Where(candle => candle.CloseTime <= MarketTimestamp.FromDatabase(request.CandleEnd!.Value))
                 .ToArray();
+            Candles? replacement = null;
+            if (completed is { Length: > 0 })
+            {
+                var current = instrument!.TryGetCandles(timeframe, out var existing)
+                    ? existing.ToDictionary(candle => candle.CloseTime) : new Dictionary<DateTimeOffset, Candle>();
+                foreach (var candle in completed) current[candle.CloseTime] = candle;
+                replacement = new Candles(timeframe, current.Values);
+            }
             using (SqlConnection connection = new SqlConnection(this.connectionString))
             {
                 await connection.OpenAsync(cancellationToken);
@@ -180,9 +213,8 @@ namespace AlgoTrading.DataAccess.Historical
                     }
                 }
                 // Never publish on validation, staging, merge, commit, or cancellation failure.
-                if (completed is { Length: > 0 })
-                    foreach (var candle in completed)
-                        instrument!.AppendLiveCandle(timeframe, candle);
+                if (replacement != null)
+                    instrument!.SetCandles(replacement);
             }
         }
 
@@ -298,7 +330,11 @@ namespace AlgoTrading.DataAccess.Historical
         private static async Task CreateStagingTableAsync(SqlConnection connection, SqlTransaction transaction,
             CancellationToken cancellationToken)
         {
-            const string sql = "CREATE TABLE #HistoricalChunk ("
+            // Coordinate the merge with the EF insert-only writer's check-and-insert transaction.
+            const string sql = "DECLARE @result int; EXEC @result = sys.sp_getapplock "
+                + "@Resource = 'Instruments_OHLC.InsertBatch', @LockMode = 'Exclusive', @LockOwner = 'Transaction', @LockTimeout = 30000; "
+                + "IF @result < 0 THROW 50000, 'Could not acquire the batch insert lock.', 1; "
+                + "CREATE TABLE #HistoricalChunk ("
                 + "InstrumentToken bigint NOT NULL, TimeStamp datetime NOT NULL, TimeFrame varchar(10) NOT NULL, "
                 + "[Open] decimal(18,8) NOT NULL, High decimal(18,8) NOT NULL, Low decimal(18,8) NOT NULL, "
                 + "[Close] decimal(18,8) NOT NULL, Volume bigint NOT NULL, OI bigint NOT NULL, "
