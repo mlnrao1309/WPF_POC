@@ -27,8 +27,13 @@ public sealed class SqlInstrumentLookup : IInstrumentLookup
     private static InstrumentInfo? QueryOne(string cs, uint token)
     {
         const string sql = @"
-SELECT Token, Symbol, DisplayName, InstrumentType, LotSize, TickSize
-FROM Instruments WHERE Token = @token";
+SELECT mw.InstrumentToken as Token
+	   ,mw.TradingSymbol as Symbol
+	   ,mw.TradingSymbol as DisplayName
+	   ,mw.Segment as InstrumentType
+	   ,1 as LotSize
+	   ,0.05 as TickSize
+ FROM MarketWatch mw where mw.InstrumentToken = @token";
         using var conn = new SqlConnection(cs);
         var row = conn.QuerySingleOrDefault<InstrumentRow>(sql, new { token = (int)token });
         if (row is null) return null;

@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <OutDir>$(MSBuildThisFileDirectory)Library\</OutDir>
+  </PropertyGroup>
+</Project>

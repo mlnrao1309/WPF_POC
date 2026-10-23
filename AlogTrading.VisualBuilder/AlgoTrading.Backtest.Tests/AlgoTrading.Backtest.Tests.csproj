@@ -36,6 +36,6 @@
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
     <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
     <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
-    <ProjectReference Include="..\AlgoTrading.Indicators\AlgoTrading.Indicators.csproj" />
+    <ProjectReference Include="..\..\Stage1Scanner.Core\Stage1Scanner.Core.csproj" />
   </ItemGroup>
 </Project>

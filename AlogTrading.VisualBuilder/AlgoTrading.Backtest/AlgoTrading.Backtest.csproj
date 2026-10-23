@@ -10,16 +10,16 @@
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
 
-  <!-- Delta 01.5: Release output to ..\Library\bin\<TFM>\ -->
+  <!-- Release output to the shared Library folder. -->
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
-    <OutDir>..\Library\bin\$(TargetFramework)\</OutDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\Library\</OutDir>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
     <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
     <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
-    <ProjectReference Include="..\AlgoTrading.Indicators\AlgoTrading.Indicators.csproj" />
+    <ProjectReference Include="..\..\Stage1Scanner.Core\Stage1Scanner.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

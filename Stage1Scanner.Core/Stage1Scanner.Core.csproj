@@ -7,5 +7,6 @@
   </PropertyGroup>
   <ItemGroup>
     <Compile Remove="Series\RsiDivergenceSeries.cs" />
+    <InternalsVisibleTo Include="AlgoTrading.Backtest" />
   </ItemGroup>
 </Project>

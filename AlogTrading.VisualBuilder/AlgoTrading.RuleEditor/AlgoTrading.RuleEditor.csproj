@@ -19,7 +19,7 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="..\Library\appsettings.json" Link="appsettings.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory Condition="'$(Configuration)' != 'Release'">Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>

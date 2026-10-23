@@ -169,7 +169,7 @@ public sealed class ConditionGroupControl : Border
         {
             // Match by reference.
             var candidate = _model.Children[i];
-            if (candidate.Kind == "group" && ReferenceEquals(candidate, FindModelFor(ctrl)))
+            if (candidate.Kind == "group" && ReferenceEquals(candidate, ctrl._model))
             {
                 _model.Children.RemoveAt(i);
                 break;
@@ -177,21 +177,6 @@ public sealed class ConditionGroupControl : Border
         }
         RebuildChildren();
         _onChanged();
-    }
-
-    private EditorNode? FindModelFor(ConditionGroupControl ctrl)
-    {
-        // The group control does not expose its model; walk children by position.
-        // Simpler: re-walk all children and match by tree order, then return candidate.
-        foreach (var child in _model.Children)
-        {
-            if (child.Kind != "group") continue;
-            var probe = new ConditionGroupControl(child, _depth + 1, isRoot: false,
-                _parameterNamesProvider, () => { }, null);
-            if (probe == ctrl) { probe = null; return child; }
-            probe = null;
-        }
-        return null;
     }
 
     private void RemoveRow(ConditionRowControl row)

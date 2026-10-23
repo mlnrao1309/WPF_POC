@@ -16,3 +16,4 @@ obj/
 !*.slnx
 !appsettings.json
 !.gitignore
+!/AlogTrading.VisualBuilder/Directory.Build.props

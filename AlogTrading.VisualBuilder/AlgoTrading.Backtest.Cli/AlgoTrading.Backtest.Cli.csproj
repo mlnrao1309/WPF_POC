@@ -10,20 +10,23 @@
     <GenerateDocumentationFile>false</GenerateDocumentationFile>
     <InvariantGlobalization>false</InvariantGlobalization>
   </PropertyGroup>
-  <!-- Delta 01.5: Release output to ..\Library\bin\<TFM>\ -->
+  <!-- Release output to the shared Library folder. -->
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
-    <OutDir>..\Library\bin\$(TargetFramework)\</OutDir>
+    <OutDir>$(MSBuildThisFileDirectory)..\Library\</OutDir>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <OutputPath>D:\MyWorkspace\TradingRuleEditor_DeepSeek\Project\Library\bin\</OutputPath>
   </PropertyGroup>
+  <ItemGroup>
+    <None Remove="AlgoTrading.Backtest.Cli.csproj.bak" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AlgoTrading.Backtest\AlgoTrading.Backtest.csproj" />
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
     <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
   </ItemGroup>
 	<ItemGroup>
-		<None Include="..\Library\appsettings.json"
-			  Link="appsettings.json"
-			  CopyToOutputDirectory="PreserveNewest" />
+		<None Include="..\Library\appsettings.json" Link="appsettings.json">
+      <CopyToOutputDirectory Condition="'$(Configuration)' != 'Release'">PreserveNewest</CopyToOutputDirectory>
+    </None>
 	</ItemGroup>
 </Project>

@@ -20,8 +20,13 @@ public sealed class InstrumentInfoDto
 public sealed class InstrumentLookupService
 {
     private const string Sql =
-        "SELECT Token, Symbol, DisplayName, InstrumentType, LotSize, TickSize " +
-        "FROM Instruments WHERE Token = @token";
+        @"SELECT mw.InstrumentToken as Token
+       , mw.TradingSymbol as Symbol
+	   ,mw.TradingSymbol as DisplayName
+	   ,mw.Segment as InstrumentType
+	   ,1 as LotSize
+	   ,0.05 as TickSize
+ FROM MarketWatch mw where mw.InstrumentToken = @token";
 
     private readonly string _connectionString;
 
@@ -64,10 +69,17 @@ public sealed class InstrumentLookupService
     {
         if (!IsAvailable) return Array.Empty<InstrumentInfoDto>();
         var like = "%" + (prefix ?? "") + "%";
-        const string q =
-            "SELECT TOP (@limit) Token, Symbol, DisplayName, InstrumentType, LotSize, TickSize " +
-            "FROM Instruments WHERE Symbol LIKE @like OR DisplayName LIKE @like " +
-            "ORDER BY Symbol";
+        const string q = @"SELECT Top (@limit) Token, Symbol, DisplayName, InstrumentType, LotSize, TickSize  from (SELECT mw.InstrumentToken as Token
+	   ,mw.TradingSymbol as Symbol
+	   ,mw.TradingSymbol as DisplayName
+	   ,mw.Segment as InstrumentType
+	   ,1 as LotSize
+	   ,0.05 as TickSize
+ FROM MarketWatch mw where mw.InstrumentToken = any (
+SELECT ib.InstrumentToken
+  FROM [Algo_Trading_CFCore].[dbo].vw_InstrumentBars ib
+  ) )b where b.Symbol like @like OR DisplayName like @like
+  Order by Symbol";
         try
         {
             using var conn = new SqlConnection(_connectionString);

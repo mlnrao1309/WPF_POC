@@ -50,14 +50,14 @@ public sealed class SqlBarSeries : IBarSeries
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionString);
 
         const string barsSql = @"
-SELECT DateTime, [Open], [High], [Low], [Close], Volume, OI, Timeframe
-FROM Candles
+SELECT DISTINCT TimeStamp AS DateTime, [Open], [High], [Low], [Close], Volume, OI, RTRIM(TimeFrame) AS Timeframe
+FROM dbo.vw_InstrumentBars
 WHERE InstrumentToken = @token
   AND (UPPER(Timeframe) = UPPER(@tf) OR UPPER(Timeframe) = 'D')
-  AND DateTime >= @from AND DateTime <= @to
+  AND TimeStamp >= @from AND TimeStamp <= @to
 ORDER BY Timeframe ASC, DateTime ASC;";
 
-        const string symbolSql = "SELECT Symbol FROM Instruments WHERE Token = @token;";
+        const string symbolSql = "SELECT TOP (1) TradingSymbol FROM dbo.MarketWatch WHERE InstrumentToken = @token AND IsDeleted = 0 ORDER BY Idx;";
 
         using var conn = new SqlConnection(connectionString);
         conn.Open();
@@ -65,20 +65,25 @@ ORDER BY Timeframe ASC, DateTime ASC;";
         string symbol = conn.QuerySingleOrDefault<string>(
             symbolSql, new { token = (int)instrumentToken }) ?? string.Empty;
 
+        var requestedTimeframe = timeframe.Unit is TimeframeUnit.m or TimeframeUnit.H
+            ? timeframe.ToMinutes().ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : timeframe.ToString();
+        // CFCore stores exchange-local timestamps (IST); the backtest API uses UTC.
+        var marketOffset = TimeSpan.FromMinutes(330);
         var rows = conn.Query<CandleRow>(barsSql, new
         {
             token = (int)instrumentToken,
-            tf = timeframe.ToString(),
-            from = fromUtc,
-            to = toUtc
+            tf = requestedTimeframe,
+            from = SysDateTime.SpecifyKind(fromUtc.Add(marketOffset), DateTimeKind.Unspecified),
+            to = SysDateTime.SpecifyKind(toUtc.Add(marketOffset), DateTimeKind.Unspecified)
         }).ToArray();
 
         var requestedRows = new List<CandleRow>();
         var dailyRows = new List<CandleRow>();
-        var requestedTimeframe = timeframe.ToString();
         for (int i = 0; i < rows.Length; i++)
         {
             var row = rows[i];
+            row.DateTime = SysDateTime.SpecifyKind(row.DateTime.Subtract(marketOffset), DateTimeKind.Utc);
             if (string.Equals(row.Timeframe, requestedTimeframe, StringComparison.OrdinalIgnoreCase))
                 requestedRows.Add(row);
             if (string.Equals(row.Timeframe, "D", StringComparison.OrdinalIgnoreCase))

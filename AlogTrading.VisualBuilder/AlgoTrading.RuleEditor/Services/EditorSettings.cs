@@ -59,8 +59,7 @@ public sealed class EditorSettings
             var libraryRoot = ResolvePath(projectRoot,
                 GetStr(root, "Paths", "LibraryRoot") ?? "Library");
 
-            var cliExe = Path.Combine(libraryRoot, "bin", "net10.0",
-                "AlgoTrading.Backtest.Cli.exe");
+            var cliExe = Path.Combine(libraryRoot, "AlgoTrading.Backtest.Cli.exe");
 
             return new EditorSettings
             {
@@ -103,7 +102,7 @@ public sealed class EditorSettings
                 SlippagePath = Path.Combine(baseDir, "configs", "slippage.json"),
                 LibraryRootPath= Path.Combine(FindProjectRoot(baseDir) ?? baseDir, "Library"),
                 CliExecutablePath = Path.Combine(FindProjectRoot(baseDir) ?? baseDir,
-    "Library", "bin", "net10.0", "AlgoTrading.Backtest.Cli.exe"),
+    "Library", "AlgoTrading.Backtest.Cli.exe"),
                 LockPath = Path.Combine(baseDir, "lock", "daemon.lock"),
                 ConfigPath = full,
                 BaseDirectory = baseDir

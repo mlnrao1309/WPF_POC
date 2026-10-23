@@ -10,7 +10,7 @@
     <Reference Include="AlgoTrading.Aggregation" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Aggregation.dll" />
     <Reference Include="AlgoTrading.Data" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Data.dll" />
     <Reference Include="AlgoTrading.Models" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Models.dll" />
-    <Reference Include="AlgoTrading.Indicators" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\AlgoTrading.Indicators.dll" />
+    <Reference Include="Stage1Scanner.Core" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\Stage1Scanner.Core.dll" />
     <Reference Include="Dapper" HintPath="..\..\AlgoTrading.Backtest.Cli\bin\Debug\net10.0\Dapper.dll" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
   </ItemGroup>
