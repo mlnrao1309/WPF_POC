@@ -11,6 +11,8 @@ namespace AlgoTrading.Backtest.Cli.Bridge;
 /// </summary>
 public sealed class StubBacktestFacade : IBacktestFacade
 {
+    public void CompleteRun(Guid runId, string resultJson, string resultFilePath) { }
+    public void FailRun(Guid runId, string errorMessage) { }
     public FacadeResult Run(FacadeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);

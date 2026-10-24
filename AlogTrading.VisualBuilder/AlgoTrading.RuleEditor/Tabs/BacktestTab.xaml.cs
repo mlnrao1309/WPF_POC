@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Threading;
 using AlgoTrading.Models;
 using AlgoTrading.RuleEditor.Models;
 using AlgoTrading.RuleEditor.Services;
@@ -27,6 +28,8 @@ public partial class BacktestTab : UserControl
     private BacktestQueueService? _queue;
     private DaemonLauncherService? _daemon;
     private bool _suppressChecks;
+    private bool _refreshingRuns;
+    private readonly DispatcherTimer _historyRefresh = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public BacktestTab()
     {
@@ -34,6 +37,9 @@ public partial class BacktestTab : UserControl
         TokenListBox.ItemsSource = _tokens;
         FromPicker.SelectedDate = DateTime.Today.AddYears(-2);
         ToPicker.SelectedDate = DateTime.Today;
+        _historyRefresh.Tick += OnHistoryRefreshTick;
+        Loaded += OnHistoryLoaded;
+        Unloaded += OnHistoryUnloaded;
     }
 
     public void Configure(MainWindow owner, EditorSettings settings,
@@ -60,12 +66,30 @@ public partial class BacktestTab : UserControl
         finally { _suppressChecks = false; }
     }
 
-    public void RefreshRunList()
+    public async void RefreshRunList()
     {
-        if (_runs is null || RunsGrid is null) return;
-        try { RunsGrid.ItemsSource = _runs.LoadRecentRuns(50); }
-        catch { RunsGrid.ItemsSource = Array.Empty<RunListRow>(); }
+        if (_runs is null || RunsGrid is null || _refreshingRuns) return;
+        _refreshingRuns = true;
+        try
+        {
+            var rows = await _runs.LoadRecentRunsAsync(50);
+            RunsGrid.ItemsSource = rows;
+            RunHistoryStatus.Text = rows.Count == 0 ? "No recorded runs." : "";
+        }
+        catch (Exception ex)
+        {
+            RunHistoryStatus.Text = "Run history could not be loaded: " + ex.Message;
+        }
+        finally { _refreshingRuns = false; }
     }
+
+    private void OnHistoryRefreshTick(object? sender, EventArgs e) => RefreshRunList();
+    private void OnHistoryLoaded(object sender, RoutedEventArgs e)
+    {
+        RefreshRunList();
+        _historyRefresh.Start();
+    }
+    private void OnHistoryUnloaded(object sender, RoutedEventArgs e) => _historyRefresh.Stop();
 
     private void OnModeCheckChanged(object sender, RoutedEventArgs e)
     {

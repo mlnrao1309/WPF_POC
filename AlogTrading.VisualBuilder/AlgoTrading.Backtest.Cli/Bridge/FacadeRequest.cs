@@ -6,6 +6,7 @@ namespace AlgoTrading.Backtest.Cli.Bridge;
 /// </summary>
 public sealed class FacadeRequest
 {
+    public Guid RunId { get; init; } = Guid.NewGuid();
     public required string RuleJson { get; init; }
     public required string StrategyName { get; init; }
     public required uint InstrumentToken { get; init; }

@@ -2,12 +2,70 @@ using AlgoTrading.Data.Daos;
 using AlgoTrading.Models;
 using FluentAssertions;
 using Xunit;
+using Dapper;
+using Microsoft.Data.SqlClient;
+using System.Data;
+using System.Text.Json;
+using System.Transactions;
 
 namespace AlgoTrading.Data.Tests;
 
 [Collection("Sql")]
 public sealed class BacktestRunsDaoTests
 {
+    [Fact]
+    public void CfCoreHistory_PersistsLifecycleAndRejectsMismatchedResults()
+    {
+        string? cs = Environment.GetEnvironmentVariable("ALGOTRADING_HISTORY_TEST_SQL");
+        if (string.IsNullOrWhiteSpace(cs)) return;
+
+        // Roll back every test row, including the registered strategy.
+        using var scope = new TransactionScope(TransactionScopeOption.RequiresNew);
+        var dao = new BacktestRunsDao(cs);
+        string name = "History test " + Guid.NewGuid().ToString("N");
+        Guid completed = Guid.NewGuid(), failed = Guid.NewGuid(), cancelled = Guid.NewGuid();
+        var from = new DateTimeOffset(2025, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        const string config = """{"runMode":"Single","rule":{"direction":"Short"}}""";
+        dao.StartRun(completed, name, "v1", 265, "Sql", "NextBarOpen/Delivery",
+            from, from.AddDays(1), config, 100000m);
+        using (var conn = new SqlConnection(cs))
+        {
+            var running = conn.QuerySingle("SELECT RunStatus, FinishedAt FROM dbo.StrategyBacktestResult WHERE RunId=@completed", new { completed });
+            Assert.Equal("Running", (string)running.RunStatus);
+            Assert.Null(running.FinishedAt);
+        }
+
+        string result = JsonSerializer.Serialize(new
+        {
+            reproducibility = new { runId = completed },
+            metrics = new { totalNetPnL = 42m, netProfitPct = .042m, totalTrades = 1,
+                winningTrades = 1, losingTrades = 0, breakevenTrades = 0,
+                winRatePct = 100m, maxDrawdownAbsolute = 0m, maxDrawdownPct = 0m },
+            trades = new[] { new { netPnL = 42m } }, equityCurve = new[] { new { equity = 100042m } }
+        });
+        dao.CompleteRun(completed, result, "test.json");
+        dao.FailRun(completed, "Late failure must not overwrite completion.");
+        dao.StartRun(failed, name, "v2", 265, "Sql", "NextBarOpen/Delivery",
+            from, from.AddDays(1), config, 100000m);
+        dao.FailRun(failed, new string('x', 3000));
+        dao.StartRun(cancelled, name, "v3", 265, "Sql", "NextBarOpen/Delivery",
+            from, from.AddDays(1), config, 100000m);
+        dao.FailRun(cancelled, "Cancelled by test.", cancelled: true);
+
+        using var verify = new SqlConnection(cs);
+        var rows = verify.Query("dbo.StrategyBacktest_Recent", new { Limit = 500 },
+            commandType: CommandType.StoredProcedure).Where(r => (string)r.StrategyName == name).ToList();
+        Assert.Equal(3, rows.Count);
+        Assert.Contains(rows, r => (Guid)r.RunId == completed && (string)r.Status == "Completed" && (decimal)r.NetPnL == 42m && (string)r.Direction == "Short");
+        Assert.Contains(rows, r => (Guid)r.RunId == failed && (string)r.Status == "Failed" && ((string)r.ErrorMessage).Length == 2000);
+        Assert.Contains(rows, r => (Guid)r.RunId == cancelled && (string)r.Status == "Cancelled");
+        Assert.Single(rows.Select(r => (int)r.StrategyId).Distinct());
+        Assert.Equal(config, verify.QuerySingle<string>("SELECT ConfigurationJson FROM dbo.StrategyBacktestResult WHERE RunId=@completed", new { completed }));
+        verify.Close();
+        Assert.Throws<SqlException>(() => dao.CompleteRun(completed,
+            result.Replace(completed.ToString(), Guid.NewGuid().ToString()), "test.json"));
+    }
+
     [Fact]
     public async Task InsertRunning_Then_RecoverStaleRunning_MarksFailed()
     {

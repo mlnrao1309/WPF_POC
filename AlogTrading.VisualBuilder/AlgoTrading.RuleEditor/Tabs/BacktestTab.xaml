@@ -84,19 +84,27 @@
 
         <Border Grid.Row="1" Padding="12,8" Background="#F4F6F9"
                 BorderBrush="#C8D0DA" BorderThickness="0,0,0,1">
-            <TextBlock Text="Recent runs" FontWeight="SemiBold"/>
+            <StackPanel>
+                <TextBlock Text="Recent runs" FontWeight="SemiBold"/>
+                <TextBlock x:Name="RunHistoryStatus" TextWrapping="Wrap" Foreground="DarkRed"/>
+            </StackPanel>
         </Border>
 
         <DataGrid Grid.Row="2" x:Name="RunsGrid" Margin="12"
                   AutoGenerateColumns="False" IsReadOnly="True"
                   CanUserAddRows="False" HeadersVisibility="Column">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Run At"
+                <DataGridTextColumn Header="Run At (IST)"
                     Binding="{Binding RunAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160"/>
                 <DataGridTextColumn Header="Mode" Binding="{Binding RunMode}" Width="120"/>
+                <DataGridTextColumn Header="Strategy" Binding="{Binding StrategyName}" Width="160"/>
+                <DataGridTextColumn Header="Direction" Binding="{Binding Direction}" Width="85"/>
                 <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
-                <DataGridTextColumn Header="Instrument" Binding="{Binding InstrumentToken}" Width="110"/>
+                <DataGridTextColumn Header="Instrument" Binding="{Binding Instrument}" Width="90"/>
+                <DataGridTextColumn Header="Trades" Binding="{Binding TotalTrades}" Width="65"/>
+                <DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat=N2}" Width="100"/>
                 <DataGridTextColumn Header="Run Id" Binding="{Binding RunId}" Width="*"/>
+                <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="200"/>
             </DataGrid.Columns>
         </DataGrid>
     </Grid>

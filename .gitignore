@@ -17,3 +17,4 @@ obj/
 !appsettings.json
 !.gitignore
 !/AlogTrading.VisualBuilder/Directory.Build.props
+!/AlogTrading.VisualBuilder/AlgoTrading.Data/RecentRuns.sql

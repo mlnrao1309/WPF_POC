@@ -35,6 +35,7 @@ public sealed class JobProcessor
 
     public JobOutcome Process(string jobPath, string strategyFileName)
     {
+        FacadeRequest? request = null;
         try
         {
             var job = JobFile.Load(jobPath);
@@ -58,7 +59,7 @@ public sealed class JobProcessor
                 _ => RunMode.Single
             };
 
-            var request = new FacadeRequest
+            request = new FacadeRequest
             {
                 RuleJson = ruleJson,
                 StrategyName = strategyName,
@@ -77,6 +78,7 @@ public sealed class JobProcessor
             var baseName = ResultWriter.BuildBaseName(
                 strategyName, job.InstrumentToken, job.From, job.To, DateTime.UtcNow);
             var outcome = _writer.Write(baseName, result);
+            _facade.CompleteRun(request.RunId, result.ResultJson!, outcome.ResultPath);
 
             var m = result.MetricsSummary;
             if (m is not null)
@@ -92,6 +94,11 @@ public sealed class JobProcessor
         }
         catch (Exception ex)
         {
+            if (request is not null)
+            {
+                try { _facade.FailRun(request.RunId, ex.Message); }
+                catch (Exception historyError) { _logger.Error("Failed to record run failure.", historyError); }
+            }
             return JobOutcome.Fail(ex.GetType().Name + ": " + ex.Message);
         }
     }

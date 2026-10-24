@@ -14,6 +14,39 @@ public sealed class BacktestRunsDao
         _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
     }
 
+    public void StartRun(Guid runId, string strategyName, string strategyVersion,
+        uint instrumentToken, string dataProvider, string executionModel,
+        DateTimeOffset from, DateTimeOffset to, string configurationJson, decimal initialCapital)
+    {
+        using var conn = new SqlConnection(_connectionString);
+        conn.Execute("dbo.StrategyBacktest_Start", new
+        {
+            RunId = runId, StrategyName = strategyName, StrategyVersion = strategyVersion,
+            InstrumentToken = checked((int)instrumentToken), DataProvider = dataProvider,
+            ExecutionModel = executionModel, BacktestFrom = from, BacktestTo = to,
+            ConfigurationJson = configurationJson, InitialCapital = initialCapital
+        }, commandType: System.Data.CommandType.StoredProcedure);
+    }
+
+    public void CompleteRun(Guid runId, string resultJson, string resultFilePath)
+    {
+        using var conn = new SqlConnection(_connectionString);
+        conn.Execute("dbo.StrategyBacktest_Complete", new
+        {
+            RunId = runId, ResultJson = resultJson, ResultFilePath = resultFilePath
+        }, commandType: System.Data.CommandType.StoredProcedure);
+    }
+
+    public void FailRun(Guid runId, string errorMessage, bool cancelled = false)
+    {
+        using var conn = new SqlConnection(_connectionString);
+        conn.Execute("dbo.StrategyBacktest_Fail", new
+        {
+            RunId = runId, ErrorMessage = errorMessage.Length > 2000 ? errorMessage[..2000] : errorMessage,
+            Cancelled = cancelled
+        }, commandType: System.Data.CommandType.StoredProcedure);
+    }
+
     public async Task InsertRunningAsync(
         Guid runId, int strategyId, int? tunedId, uint instrumentToken,
         Timeframe baseTimeframe, SysDateTime dataFrom, SysDateTime dataTo,

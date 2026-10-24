@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Security.Cryptography;
 using AlgoTrading.Backtest;
 using AlgoTrading.Backtest.Metrics;
 using AlgoTrading.Backtest.Results;
 using AlgoTrading.Backtest.Runtime;
 using AlgoTrading.Data;
+using AlgoTrading.Data.Daos;
 using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Cli.Bridge;
@@ -30,32 +32,81 @@ namespace AlgoTrading.Backtest.Cli.Bridge;
 public sealed class BacktestFacade : IBacktestFacade
 {
     private readonly AppSettings _settings;
+    private readonly BacktestRunsDao _runs;
 
     public BacktestFacade(AppSettings settings)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _runs = new BacktestRunsDao(settings.Data.Sql.ConnectionString);
     }
 
     public FacadeResult Run(FacadeRequest request, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
 
+        bool historyStarted = false;
         try
         {
-            return RunCore(request, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartRun(request);
+            historyStarted = true;
+            var result = RunCore(request, cancellationToken);
+            if (!result.Success)
+                FailRun(request.RunId, result.ErrorType + ": " + result.ErrorMessage);
+            return result;
         }
         catch (OperationCanceledException)
         {
+            if (historyStarted) _runs.FailRun(request.RunId, "Backtest cancelled.", cancelled: true);
             throw;
         }
         catch (JsonException ex)
         {
-            return FacadeResult.Fail("InvalidJson", ex.Message);
+            return RecordFailure(request.RunId, historyStarted, "InvalidJson", ex.Message);
         }
         catch (Exception ex)
         {
-            return FacadeResult.Fail(ex.GetType().Name, ex.Message);
+            return RecordFailure(request.RunId, historyStarted, ex.GetType().Name, ex.Message);
         }
+    }
+
+    private void StartRun(FacadeRequest request)
+    {
+        using var rule = JsonDocument.Parse(request.RuleJson);
+        string configuration = JsonSerializer.Serialize(new
+        {
+            schemaVersion = 1, rule = rule.RootElement,
+            runMode = request.Mode.ToString(), engineVersion = EngineInfo.Version,
+            initialCapital = _settings.Backtest.InitialCapital,
+            riskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent, quantity = 1,
+            costsJson = ReadConfigOrEmpty(_settings.Configs.CostsPath),
+            slippageJson = ReadConfigOrEmpty(_settings.Configs.SlippagePath),
+            marginsJson = ReadConfigOrEmpty(_settings.Configs.MarginsPath)
+        });
+        string version = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(request.RuleJson)));
+        string executionMode = rule.RootElement.TryGetProperty("executionMode", out var mode)
+            ? mode.GetString() ?? "Delivery" : "Delivery";
+        _runs.StartRun(request.RunId, request.StrategyName, version, request.InstrumentToken,
+            _settings.Data.Source, "NextBarOpen/" + executionMode,
+            new DateTimeOffset(DateTime.SpecifyKind(request.FromUtc, DateTimeKind.Utc)),
+            new DateTimeOffset(DateTime.SpecifyKind(request.ToUtc, DateTimeKind.Utc)),
+            configuration, _settings.Backtest.InitialCapital);
+    }
+
+    public void CompleteRun(Guid runId, string resultJson, string resultFilePath)
+        => _runs.CompleteRun(runId, resultJson, resultFilePath);
+
+    public void FailRun(Guid runId, string errorMessage)
+        => _runs.FailRun(runId, errorMessage);
+
+    private FacadeResult RecordFailure(Guid runId, bool historyStarted, string errorType, string message)
+    {
+        if (historyStarted)
+        {
+            try { FailRun(runId, message); }
+            catch (Exception ex) { message += " | Failed to update run history: " + ex.Message; }
+        }
+        return FacadeResult.Fail(errorType, message);
     }
 
     private FacadeResult RunCore(FacadeRequest req, CancellationToken ct)
@@ -94,7 +145,7 @@ public sealed class BacktestFacade : IBacktestFacade
             SlippageJson = ReadConfigOrEmpty(_settings.Configs.SlippagePath),
             MarginsJson = ReadConfigOrEmpty(_settings.Configs.MarginsPath),
             DataSource = _settings.Data.Source,
-            RunId = Guid.NewGuid(),
+            RunId = req.RunId,
             DailySeries = (bars as SqlBarSeries)?.DailySeries
         };
 

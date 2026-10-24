@@ -9,6 +9,7 @@ public static class CliRunner
     public static int Run(AppSettings settings, CliLogger logger, CliArguments args,
                           IBacktestFacade facade, CancellationToken cancellationToken)
     {
+        FacadeRequest? request = null;
         try
         {
             logger.Information("Loading rule: " + Path.GetFileName(args.RulePath!));
@@ -33,7 +34,7 @@ public static class CliRunner
             logger.Information("Running backtest: token=" + args.Instrument +
                                ", from=" + args.From + ", to=" + args.To + ", mode=" + mode);
 
-            var request = new FacadeRequest
+            request = new FacadeRequest
             {
                 RuleJson = ruleJson,
                 StrategyName = strategyName,
@@ -63,6 +64,7 @@ public static class CliRunner
             var baseName = ResultWriter.BuildBaseName(
                 strategyName, args.Instrument, args.From, args.To, DateTime.UtcNow);
             var outcome = writer.Write(baseName, result);
+            facade.CompleteRun(request.RunId, result.ResultJson!, outcome.ResultPath);
 
             var m = result.MetricsSummary;
             if (m is not null)
@@ -77,6 +79,11 @@ public static class CliRunner
         }
         catch (Exception ex)
         {
+            if (request is not null)
+            {
+                try { facade.FailRun(request.RunId, ex.Message); }
+                catch (Exception historyError) { logger.Error("Failed to record run failure.", historyError); }
+            }
             logger.Error("Unhandled error in CLI runner.", ex);
             return 1;
         }

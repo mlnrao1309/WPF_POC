@@ -8,4 +8,6 @@ namespace AlgoTrading.Backtest.Cli.Bridge;
 public interface IBacktestFacade
 {
     FacadeResult Run(FacadeRequest request, CancellationToken cancellationToken);
+    void CompleteRun(Guid runId, string resultJson, string resultFilePath);
+    void FailRun(Guid runId, string errorMessage);
 }
