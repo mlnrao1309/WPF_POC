@@ -12,7 +12,8 @@ public sealed class TimeframeCache
     private readonly IBarSeries _base;
     private readonly Dictionary<Timeframe, IBarSeries> _cache;
 
-    public TimeframeCache(IBarSeries baseSeries, IBarSeries? dailySeries = null)
+    public TimeframeCache(IBarSeries baseSeries, IBarSeries? dailySeries = null,
+        IReadOnlyDictionary<Timeframe, IBarSeries>? preparedSeries = null)
     {
         _base = baseSeries ?? throw new ArgumentNullException(nameof(baseSeries));
         _cache = new Dictionary<Timeframe, IBarSeries>(capacity: 8)
@@ -21,6 +22,13 @@ public sealed class TimeframeCache
         };
         if (dailySeries is not null)
             _cache[Timeframe.Parse("D")] = dailySeries;
+        if (preparedSeries is not null)
+            foreach (var pair in preparedSeries)
+            {
+                if (pair.Value.InstrumentToken != baseSeries.InstrumentToken)
+                    throw new ArgumentException("Prepared candles belong to a different instrument.", nameof(preparedSeries));
+                if (!pair.Key.Equals(baseSeries.Timeframe)) _cache[pair.Key] = pair.Value;
+            }
     }
 
     public IBarSeries Get(uint instrumentToken, Timeframe timeframe)

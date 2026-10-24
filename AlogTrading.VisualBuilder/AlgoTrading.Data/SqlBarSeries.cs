@@ -22,6 +22,51 @@ public sealed class SqlBarSeries : IBarSeries
     public ReadOnlyMemory<decimal> OI { get; }
     public ReadOnlyMemory<SysDateTime> DateTime { get; }
     public IBarSeries? DailySeries { get; private set; }
+    public ReadOnlyMemory<SysDateTime> CloseTime { get; private set; }
+    public Timeframe? AggregatedFrom { get; private set; }
+
+    public static IReadOnlyDictionary<Timeframe, IBarSeries> Prepare(
+        string connectionString, uint token, string ruleJson, SysDateTime fromUtc, SysDateTime toUtc)
+    {
+        using var connection = new SqlConnection(connectionString);
+        var parameters = new DynamicParameters(new { InstrumentToken = (long)token, RuleJson = ruleJson });
+        parameters.Add("FromUtc", fromUtc, System.Data.DbType.DateTime2);
+        parameters.Add("ToUtc", toUtc, System.Data.DbType.DateTime2);
+        var rows = connection.Query<PreparedRow>("dbo.StrategyBacktest_PrepareData",
+            parameters,
+            commandType: System.Data.CommandType.StoredProcedure, commandTimeout: 180).ToArray();
+        var result = new Dictionary<Timeframe, IBarSeries>();
+        foreach (var group in rows.GroupBy(r => r.TimeframeCode))
+        {
+            var tf = Timeframe.Parse(group.Key);
+            var items = group.ToArray();
+            var series = CreateSeries(token, items[0].Symbol, tf, items.Select(r => new CandleRow
+            {
+                DateTime = SysDateTime.SpecifyKind(r.DateTime, DateTimeKind.Utc),
+                Open = r.Open, High = r.High, Low = r.Low, Close = r.Close, Volume = r.Volume, OI = r.OI
+            }).ToArray());
+            series.CloseTime = items.Select(r => SysDateTime.SpecifyKind(r.ClosedAt, DateTimeKind.Utc)).ToArray();
+            series.AggregatedFrom = items[0].SourceTimeframeCode is { } source ? Timeframe.Parse(source) : null;
+            result.Add(tf, series);
+        }
+        if (result.Count == 0) throw new InvalidDataException("Data preparation returned no complete candle series.");
+        return result;
+    }
+
+    private sealed class PreparedRow
+    {
+        public string TimeframeCode { get; set; } = "";
+        public string? SourceTimeframeCode { get; set; }
+        public string Symbol { get; set; } = "";
+        public SysDateTime DateTime { get; set; }
+        public SysDateTime ClosedAt { get; set; }
+        public decimal Open { get; set; }
+        public decimal High { get; set; }
+        public decimal Low { get; set; }
+        public decimal Close { get; set; }
+        public decimal Volume { get; set; }
+        public decimal OI { get; set; }
+    }
 
     private SqlBarSeries(
         uint instrumentToken, string symbol, Timeframe timeframe,

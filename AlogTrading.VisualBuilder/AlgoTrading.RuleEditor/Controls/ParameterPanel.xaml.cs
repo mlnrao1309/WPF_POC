@@ -25,6 +25,11 @@ public partial class ParameterPanel : UserControl
 
     public IReadOnlyList<EditorParameter> GetParameters() => _rows.ToList();
 
+    private void OnParameterSourceUpdated(object sender, System.Windows.Data.DataTransferEventArgs e)
+    {
+        Changed?.Invoke(this, EventArgs.Empty);
+    }
+
     private void OnAddRowClick(object sender, RoutedEventArgs e)
     {
         _rows.Add(new EditorParameter

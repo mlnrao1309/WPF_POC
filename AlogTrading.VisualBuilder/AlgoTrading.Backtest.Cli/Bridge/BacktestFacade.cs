@@ -48,9 +48,18 @@ public sealed class BacktestFacade : IBacktestFacade
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            StartRun(request);
+            var rule = RuleDefinitionJson.Deserialize(request.RuleJson);
+            var validation = RuleDefinitionValidator.Validate(rule);
+            if (!validation.IsValid)
+                return FacadeResult.Fail("Validation", string.Join("; ", validation.Errors.Select(e => e.ToString())));
+            if (!string.Equals(_settings.Data.Source, "Sql", StringComparison.OrdinalIgnoreCase))
+                return FacadeResult.Fail("DataPreparation", "Strict backtest preparation requires the SQL data source.");
+            var prepared = SqlBarSeries.Prepare(_settings.Data.Sql.ConnectionString, request.InstrumentToken,
+                request.RuleJson, request.FromUtc, request.ToUtc);
+            cancellationToken.ThrowIfCancellationRequested();
+            StartRun(request, prepared);
             historyStarted = true;
-            var result = RunCore(request, cancellationToken);
+            var result = RunCore(request, rule, prepared, cancellationToken);
             if (!result.Success)
                 FailRun(request.RunId, result.ErrorType + ": " + result.ErrorMessage);
             return result;
@@ -70,14 +79,20 @@ public sealed class BacktestFacade : IBacktestFacade
         }
     }
 
-    private void StartRun(FacadeRequest request)
+    private void StartRun(FacadeRequest request, IReadOnlyDictionary<Timeframe, IBarSeries> prepared)
     {
         using var rule = JsonDocument.Parse(request.RuleJson);
         string configuration = JsonSerializer.Serialize(new
         {
             schemaVersion = 1, rule = rule.RootElement,
             runMode = request.Mode.ToString(), engineVersion = EngineInfo.Version,
-            initialCapital = _settings.Backtest.InitialCapital,
+            initialCapital = request.TradedCapital,
+            lossBasis = request.LossBasis.ToString(), dailyLossLimitPercent = 2m, monthlyLossLimitPercent = 5m,
+            preparedData = prepared.Select(p => new
+            {
+                timeframe = p.Key.ToString(), sourceTimeframe = (p.Value as SqlBarSeries)?.AggregatedFrom?.ToString(),
+                candles = p.Value.Count, fromUtc = p.Value.From, toUtc = p.Value.To
+            }),
             riskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent, quantity = 1,
             costsJson = ReadConfigOrEmpty(_settings.Configs.CostsPath),
             slippageJson = ReadConfigOrEmpty(_settings.Configs.SlippagePath),
@@ -90,7 +105,7 @@ public sealed class BacktestFacade : IBacktestFacade
             _settings.Data.Source, "NextBarOpen/" + executionMode,
             new DateTimeOffset(DateTime.SpecifyKind(request.FromUtc, DateTimeKind.Utc)),
             new DateTimeOffset(DateTime.SpecifyKind(request.ToUtc, DateTimeKind.Utc)),
-            configuration, _settings.Backtest.InitialCapital);
+            configuration, request.TradedCapital);
     }
 
     public void CompleteRun(Guid runId, string resultJson, string resultFilePath)
@@ -109,35 +124,17 @@ public sealed class BacktestFacade : IBacktestFacade
         return FacadeResult.Fail(errorType, message);
     }
 
-    private FacadeResult RunCore(FacadeRequest req, CancellationToken ct)
+    private FacadeResult RunCore(FacadeRequest req, RuleDefinition rule,
+        IReadOnlyDictionary<Timeframe, IBarSeries> prepared, CancellationToken ct)
     {
-        // 1. Rule.
-        var rule = RuleDefinitionJson.Deserialize(req.RuleJson);
-
-        // 2. Validate.
-        var validation = RuleDefinitionValidator.Validate(rule);
-        if (!validation.IsValid)
-        {
-            string msg = string.Join("; ", validation.Errors.Select(e => e.ToString()));
-            return FacadeResult.Fail("Validation", msg);
-        }
-
-        // 3. Load bars.
-        var dataOptions = new DataOptions
-        {
-            Source = _settings.Data.Source,
-            Sql = new SqlOptions { ConnectionString = _settings.Data.Sql.ConnectionString },
-            Csv = new CsvOptions { FolderPath = _settings.Data.Csv.FolderPath },
-            Parquet = new ParquetOptions { FolderPath = _settings.Data.Parquet.FolderPath }
-        };
-        var factory = new BarSeriesFactory(dataOptions);
-        var bars = factory.Load(req.InstrumentToken, rule.EvaluationTimeframe,
-                                req.FromUtc, req.ToUtc);
+        // Preparation has succeeded before the history row is created.
+        var bars = prepared[rule.EvaluationTimeframe];
 
         // 4. Engine options.
         var options = new BacktestEngineOptions
         {
-            InitialCapital = _settings.Backtest.InitialCapital,
+            InitialCapital = req.TradedCapital,
+            LossBasis = req.LossBasis,
             RiskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent,
             Quantity = 1,
             MaxParallelism = req.MaxParallelism,
@@ -146,7 +143,8 @@ public sealed class BacktestFacade : IBacktestFacade
             MarginsJson = ReadConfigOrEmpty(_settings.Configs.MarginsPath),
             DataSource = _settings.Data.Source,
             RunId = req.RunId,
-            DailySeries = (bars as SqlBarSeries)?.DailySeries
+            PreparedSeries = prepared,
+            DailySeries = prepared.GetValueOrDefault(Timeframe.Parse("D"))
         };
 
         // 5. Base run on the full series.
@@ -179,6 +177,13 @@ public sealed class BacktestFacade : IBacktestFacade
         }
 
         // 7. Serialize artifacts.
+        if (req.Mode != RunMode.Single)
+            result.RiskAssessment = new RiskAssessment
+            {
+                Status = RiskAssessmentStatus.NotAssessed, Reason = RiskAssessmentReason.UnsupportedRunMode,
+                LossBasis = req.LossBasis, TradedCapital = req.TradedCapital,
+                DailyLossLimit = req.TradedCapital * 0.02m, MonthlyLossLimit = req.TradedCapital * 0.05m
+            };
         string resultJson = BacktestResultJson.Serialize(result);
         string tradesCsv  = BuildTradesCsv(result.Trades);
         string summary    = BuildSummary(req, result);
@@ -269,6 +274,25 @@ public sealed class BacktestFacade : IBacktestFacade
         sb.Append("Profit factor:   ").AppendLine(m.ProfitFactor.ToString("0.####", inv));
         sb.Append("Sharpe:          ").AppendLine(m.Sharpe.ToString("0.####", inv));
         sb.Append("Max drawdown:    ").Append(m.MaxDrawdownPct.ToString("0.##", inv)).AppendLine("%");
+        sb.AppendLine();
+
+        var risk = result.RiskAssessment;
+        sb.Append("Loss basis:      ").AppendLine(risk.LossBasis.ToString());
+        sb.Append("Traded capital:  INR ").AppendLine(risk.TradedCapital.ToString("N2", inv));
+        sb.Append("Risk assessment: ").Append(risk.Status).Append(" / ").AppendLine(risk.Reason.ToString());
+        sb.Append("Loss limits:     Daily INR ").Append(risk.DailyLossLimit.ToString("N2", inv))
+            .Append("; monthly INR ").AppendLine(risk.MonthlyLossLimit.ToString("N2", inv));
+        sb.AppendLine("Monthly P&L (IST; realized net / change in marked equity):");
+        foreach (var month in risk.Periods.Where(p => p.Period == RiskPeriod.Monthly))
+            sb.Append("  ").Append(month.StartDateIst.ToString("yyyy-MM", inv)).Append("  INR ")
+                .Append(month.RealizedPnL.ToString("N2", inv)).Append(" / ")
+                .AppendLine(month.EquityPnL.ToString("N2", inv));
+        foreach (var breach in risk.Breaches)
+            sb.Append("  Breach ").Append(breach.Period).Append(" at ")
+                .Append(breach.AtUtc.AddMinutes(330).ToString("yyyy-MM-dd HH:mm", inv))
+                .Append(" IST; loss INR ").Append(breach.Loss.ToString("N2", inv))
+                .Append("; limit INR ").AppendLine(breach.Limit.ToString("N2", inv));
+        sb.AppendLine("Assessment only; StrategyMain.IsApproved remains a user decision.");
         sb.AppendLine();
 
         if (req.Mode == RunMode.Sweep && result.Sweep is not null)

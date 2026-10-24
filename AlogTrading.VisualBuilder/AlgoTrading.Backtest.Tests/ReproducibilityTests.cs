@@ -21,7 +21,7 @@ public class ReproducibilityTests
         var result = engine.Run(RuleBuilder.AlwaysEntryLong(), series);
 
         Assert.Equal(EngineInfo.Version, result.Reproducibility.EngineVersion);
-        Assert.Equal("1.0.0", EngineInfo.Version);
+        Assert.Equal("1.2.0", EngineInfo.Version);
     }
 
     [Fact]

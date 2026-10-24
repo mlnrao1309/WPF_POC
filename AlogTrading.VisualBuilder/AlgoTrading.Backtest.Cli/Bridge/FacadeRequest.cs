@@ -7,6 +7,8 @@ namespace AlgoTrading.Backtest.Cli.Bridge;
 public sealed class FacadeRequest
 {
     public Guid RunId { get; init; } = Guid.NewGuid();
+    public AlgoTrading.Models.RiskLossBasis LossBasis { get; init; } = AlgoTrading.Models.RiskLossBasis.RealizedOnly;
+    public decimal TradedCapital { get; init; } = 50_000m;
     public required string RuleJson { get; init; }
     public required string StrategyName { get; init; }
     public required uint InstrumentToken { get; init; }

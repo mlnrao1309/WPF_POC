@@ -29,6 +29,10 @@ public sealed class BacktestEngine
     public BacktestEngine(BacktestEngineOptions options)
     {
         _options = options ?? throw new ArgumentNullException(nameof(options));
+        if (options.InitialCapital <= 0m || options.DailyLossLimitPercent <= 0m || options.MonthlyLossLimitPercent <= 0m)
+            throw new ArgumentOutOfRangeException(nameof(options), "Capital and loss limits must be positive.");
+        if (!Enum.IsDefined(options.LossBasis))
+            throw new ArgumentOutOfRangeException(nameof(options.LossBasis));
         _costs = CostsConfig.Parse(options.CostsJson);
         _slippage = SlippageConfig.Parse(options.SlippageJson);
         _margins = MarginConfig.Parse(options.MarginsJson);
@@ -55,7 +59,7 @@ public sealed class BacktestEngine
         if (baseSeries.Count < 2)
             return EmptyResult(rule, baseSeries);
 
-        var cache = new TimeframeCache(baseSeries, _options.DailySeries);
+        var cache = new TimeframeCache(baseSeries, _options.DailySeries, _options.PreparedSeries);
         var accessor = new TimeframeAccessor(baseSeries.InstrumentToken, baseSeries, cache);
         var indicators = new IndicatorProvider(accessor);
 
@@ -112,9 +116,14 @@ public sealed class BacktestEngine
                 var fill = ApplyEntrySlippage(rule.Direction, opens[i]);
                 var qty = _options.Quantity;
                 var requiredMargin = _marginModel.Compute(fill, qty, rule.ExecutionMode);
-                if (requiredMargin <= _options.InitialCapital + equityBase)
+                var entryCosts = _costModel.Compute(new TradeExecutionContext
                 {
-                    OpenPosition(position, rule, fill, dts[i], i, qty,
+                    EntryPrice = fill, ExitPrice = 0m, Quantity = qty,
+                    Direction = rule.Direction, Mode = rule.ExecutionMode, Scope = TradeCostScope.Entry
+                }).Total;
+                if (requiredMargin + entryCosts <= equityBase)
+                {
+                    OpenPosition(position, rule, fill, dts[i], i, qty, entryCosts,
                                  slRuleGroup, tpRuleGroup);
                 }
                 pendingEntry = false;
@@ -203,7 +212,7 @@ public sealed class BacktestEngine
                 decimal unrealized = position.Direction == Direction.Long
                     ? (closes[i] - position.EntryPrice) * position.Quantity
                     : (position.EntryPrice - closes[i]) * position.Quantity;
-                eq += unrealized;
+                eq += unrealized - position.EntryCosts;
             }
             equity.Add(new EquityPoint { DateTime = dts[i], Equity = eq });
         }
@@ -243,7 +252,7 @@ public sealed class BacktestEngine
             RunId = _options.RunId
         };
 
-        return new BacktestResult
+        var result = new BacktestResult
         {
             SchemaVersion = 1,
             Reproducibility = record,
@@ -253,6 +262,8 @@ public sealed class BacktestEngine
             Sweep = null,
             WalkForward = null
         };
+        result.RiskAssessment = RiskAssessmentCalculator.Compute(result, _options);
+        return result;
     }
 
     // ---------- entry / exit helpers ----------
@@ -270,7 +281,7 @@ public sealed class BacktestEngine
     }
 
     private void OpenPosition(PositionState p, RuleDefinition rule, decimal fill,
-                              DateTime time, int barIndex, int qty,
+                              DateTime time, int barIndex, int qty, decimal entryCosts,
                               ConditionGroup? slRuleGroup, ConditionGroup? tpRuleGroup)
     {
         p.IsOpen = true;
@@ -279,6 +290,7 @@ public sealed class BacktestEngine
         p.EntryPrice = fill;
         p.EntryBarIndex = barIndex;
         p.Quantity = qty;
+        p.EntryCosts = entryCosts;
         p.MAE = 0m;
         p.MFE = 0m;
         p.StopLossRuleGroup = null;
@@ -411,7 +423,7 @@ public sealed class BacktestEngine
 
     private BacktestResult EmptyResult(RuleDefinition rule, IBarSeries baseSeries)
     {
-        return new BacktestResult
+        var result = new BacktestResult
         {
             SchemaVersion = 1,
             Reproducibility = new ReproducibilityRecord
@@ -430,5 +442,7 @@ public sealed class BacktestEngine
             Trades = Array.Empty<Trade>(),
             EquityCurve = Array.Empty<EquityPoint>()
         };
+        result.RiskAssessment = RiskAssessmentCalculator.Compute(result, _options);
+        return result;
     }
 }

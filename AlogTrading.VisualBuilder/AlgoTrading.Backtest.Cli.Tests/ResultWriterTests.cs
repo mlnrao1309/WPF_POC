@@ -10,7 +10,7 @@ namespace AlgoTrading.Backtest.Cli.Tests;
 public class ResultWriterTests
 {
     [Fact]
-    public async Task CfCoreFacadeHistory_RecordsRealBacktestAndValidationFailure()
+    public async Task CfCoreFacadeHistory_PreparesBeforeRecording_AndRejectsWithoutHistory()
     {
         string? configPath = Environment.GetEnvironmentVariable("ALGOTRADING_HISTORY_TEST_CONFIG");
         if (string.IsNullOrWhiteSpace(configPath)) return;
@@ -20,13 +20,21 @@ public class ResultWriterTests
         {
             using var transaction = new TransactionScope(TransactionScopeOption.RequiresNew,
                 TransactionScopeAsyncFlowOption.Enabled);
+            using (var fixture=new SqlConnection(settings.Data.Sql.ConnectionString))
+            {
+                fixture.Open();using var seed=fixture.CreateCommand();seed.CommandText="""
+                    DELETE dbo.Instruments_OHLC WHERE InstrumentToken=265 AND RTRIM(TimeFrame)='15' AND TimeStamp>='20260102' AND TimeStamp<'20260103';
+                    INSERT dbo.Instruments_OHLC (InstrumentToken,TimeFrame,TimeStamp,[Open],High,Low,[Close],Volume,OI)
+                    SELECT TOP(25) 265,'15',DATEADD(minute,15*(ROW_NUMBER() OVER(ORDER BY object_id)-1),CONVERT(datetime,'20260102 09:15:00')),100,101,99,100,1,0 FROM sys.all_objects;
+                    """;seed.ExecuteNonQuery();
+            }
             await using var logger = TestLogger.Silent(Path.Combine(dir, "logs"));
             var facade = new BacktestFacade(settings);
             var processor = new JobProcessor(logger, facade, new ResultWriter(Path.Combine(dir, "results")), 1);
             string name = "History integration " + Guid.NewGuid().ToString("N");
             var jobPath = Path.Combine(dir, "integration.job.json");
             var rulePath = Path.Combine(dir, "integration.json");
-            File.WriteAllText(jobPath, """{"schemaVersion":1,"strategyFile":"integration.json","instrumentToken":265,"from":"2026-09-01","to":"2026-09-30","mode":"Single"}""");
+            File.WriteAllText(jobPath, """{"schemaVersion":1,"strategyFile":"integration.json","instrumentToken":265,"from":"2026-01-02","to":"2026-01-02","mode":"Single"}""");
             string rule = JsonSerializer.Serialize(new
             {
                 schemaVersion = 1, strategyName = name, direction = "Long",
@@ -65,7 +73,7 @@ public class ResultWriterTests
                 }
                 Assert.True(found);
             }
-            // Valid JSON with an invalid rule must create a visible Failed history row.
+            // Invalid input must stop before any history row is created.
             File.WriteAllText(rulePath, JsonSerializer.Serialize(new { strategyName = name, executionMode = "Delivery" }));
             var failure = processor.Process(jobPath, "integration.json");
             Assert.False(failure.Success);
@@ -74,7 +82,25 @@ public class ResultWriterTests
             using var check = verify.CreateCommand();
             check.CommandText = "SELECT COUNT(*) FROM dbo.StrategyBacktestResult r JOIN dbo.StrategyMain s ON s.StrategyId=r.StrategyId WHERE s.StrategyName=@name AND r.RunStatus='Failed' AND r.FinishedAt IS NOT NULL";
             check.Parameters.AddWithValue("@name", name);
-            Assert.Equal(1, (int)check.ExecuteScalar()!);
+            Assert.Equal(0, (int)check.ExecuteScalar()!);
+            using(var remove=verify.CreateCommand())
+            {
+                remove.CommandText="DELETE dbo.Instruments_OHLC WHERE InstrumentToken=265 AND RTRIM(TimeFrame)='15' AND TimeStamp='20260102 09:30:00'";
+                remove.ExecuteNonQuery();
+            }
+            verify.Close();
+            var rejectedId=Guid.NewGuid();
+            string rejectedName="Rejected preflight "+rejectedId;
+            var rejected=facade.Run(new FacadeRequest
+            {
+                RunId=rejectedId,RuleJson=rule.Replace(name,rejectedName),StrategyName=rejectedName,InstrumentToken=265,Mode=RunMode.Single,
+                FromUtc=new DateTime(2026,1,1,18,30,0,DateTimeKind.Utc),ToUtc=new DateTime(2026,1,2,18,29,59,DateTimeKind.Utc)
+            },CancellationToken.None);
+            Assert.False(rejected.Success);Assert.Contains("Incomplete",rejected.ErrorMessage);
+            verify.Open();using var noRows=verify.CreateCommand();
+            noRows.CommandText="SELECT (SELECT COUNT(*) FROM dbo.StrategyBacktestResult WHERE RunId=@id)+(SELECT COUNT(*) FROM dbo.StrategyMain WHERE StrategyName=@name)";
+            noRows.Parameters.AddWithValue("@id",rejectedId);noRows.Parameters.AddWithValue("@name",rejectedName);
+            Assert.Equal(0,(int)noRows.ExecuteScalar()!);
         }
         finally { TempFolder.Delete(dir); }
     }
@@ -88,7 +114,7 @@ public class ResultWriterTests
         try
         {
             var job = Path.Combine(dir, "strategy.job.json");
-            File.WriteAllText(job, """{"schemaVersion":1,"strategyFile":"strategy.json","instrumentToken":265,"from":"2025-01-01","to":"2025-01-02","mode":"Single"}""");
+            File.WriteAllText(job, """{"schemaVersion":1,"strategyFile":"strategy.json","instrumentToken":265,"from":"2025-01-01","to":"2025-01-02","mode":"Single","lossBasis":"IncludeUnrealized","tradedCapital":50000}""");
             File.WriteAllText(Path.Combine(dir, "strategy.json"), """{"strategyName":"History test"}""");
             await using var logger = TestLogger.Silent(Path.Combine(dir, "logs"));
             var facade = new HistoryRecordingFacade { FailCompletion = failCompletion };
@@ -96,6 +122,8 @@ public class ResultWriterTests
             var outcome = processor.Process(job, "strategy.json");
 
             Assert.NotNull(facade.Request);
+            Assert.Equal(AlgoTrading.Models.RiskLossBasis.IncludeUnrealized,facade.Request.LossBasis);
+            Assert.Equal(50000m,facade.Request.TradedCapital);
             Assert.NotEqual(Guid.Empty, facade.Request.RunId);
             Assert.Equal(facade.Request.RunId, facade.CompletedRunId);
             Assert.True(facade.FilesExistAtCompletion);

@@ -126,7 +126,8 @@ namespace AlgoTrading
                     services.AddSingleton(new TradingCalendarSelection(
                         calendar["ExchangeCode"] ?? "NSE",
                         calendar["SegmentCode"] ?? "CM",
-                        calendar["Revision"] ?? throw new InvalidOperationException("TradingCalendar:Revision is required.")));
+                        calendar["Revision"] ?? throw new InvalidOperationException("TradingCalendar:Revision is required."),
+                        DateOnly.ParseExact(calendar["SessionBoundsFrom"] ?? "2026-08-03", "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)));
 
                     services.AddScoped<IMarketWatchRepository, MarketWatchRepository>();
                     services.AddScoped<IHistoricalDataRepository, HistoricalDataRepository>();

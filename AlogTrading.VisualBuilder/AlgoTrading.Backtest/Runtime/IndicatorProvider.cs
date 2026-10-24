@@ -186,7 +186,9 @@ public sealed class IndicatorProvider
             var time = new DateTimeOffset(DateTime.SpecifyKind(times[i], DateTimeKind.Utc)).ToOffset(TimeSpan.FromMinutes(330));
             if (i > 0 && time <= items[i - 1].OpenTime)
                 throw new ArgumentException("Indicator timestamps must be unique and increasing.");
-            items[i] = Core.Candle.Create(time, timeframe, open[i], high[i], low[i], close[i], volume[i]);
+            var end = new DateTimeOffset(DateTime.SpecifyKind(TimeframeAccessor.BarEnd(aligned.Bars, i), DateTimeKind.Utc))
+                .ToOffset(TimeSpan.FromMinutes(330));
+            items[i] = new Core.Candle(time, end, open[i], high[i], low[i], close[i], volume[i], aligned.Bars.OI.Span[i]);
         }
         return new Core.Candles(timeframe, items);
     }

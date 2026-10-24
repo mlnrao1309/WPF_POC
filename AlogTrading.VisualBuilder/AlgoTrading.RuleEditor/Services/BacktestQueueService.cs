@@ -12,6 +12,8 @@ public sealed class QueueBatchRequest
     public required DateOnly From { get; init; }
     public required DateOnly To { get; init; }
     public required string Mode { get; init; } // Single | Sweep | WalkForward
+    public RiskLossBasis LossBasis { get; init; } = RiskLossBasis.RealizedOnly;
+    public decimal TradedCapital { get; init; } = 50_000m;
 }
 
 public sealed class QueueBatchResult
@@ -43,6 +45,8 @@ public sealed class BacktestQueueService
     public QueueBatchResult Queue(QueueBatchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (!Enum.IsDefined(request.LossBasis) || request.TradedCapital <= 0m)
+            throw new ArgumentException("A valid loss basis and positive traded capital are required.", nameof(request));
         Directory.CreateDirectory(_pendingFolder);
         Directory.CreateDirectory(_runningFolder);
 
@@ -94,6 +98,8 @@ public sealed class BacktestQueueService
         sb.Append("\"from\":\"").Append(req.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append("\",");
         sb.Append("\"to\":\"").Append(req.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)).Append("\",");
         sb.Append("\"mode\":\"").Append(req.Mode).Append("\",");
+        sb.Append("\"lossBasis\":\"").Append(req.LossBasis).Append("\",");
+        sb.Append("\"tradedCapital\":").Append(req.TradedCapital.ToString(CultureInfo.InvariantCulture)).Append(',');
         sb.Append("\"strategyId\":null,");
         sb.Append("\"tunedId\":null");
         sb.Append('}');

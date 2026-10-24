@@ -16,6 +16,12 @@ public partial class OverviewTab : UserControl
         "1m", "3m", "5m", "15m", "18m", "25m", "30m", "1H", "D", "W", "M"
     };
 
+    private static readonly Timeframe[] BaseTimeframeOptions =
+    {
+        new(TimeframeUnit.m, 1), new(TimeframeUnit.m, 5), new(TimeframeUnit.m, 15),
+        new(TimeframeUnit.H, 1), new(TimeframeUnit.D, 1)
+    };
+
     private EditorStrategy? _strategy;
     private bool _suppress;
 
@@ -73,7 +79,7 @@ public partial class OverviewTab : UserControl
         if (EvalTfBox.Items.Count == 0)
             foreach (var s in TimeframeOptions) EvalTfBox.Items.Add(s);
         if (BaseTfBox.Items.Count == 0)
-            foreach (var s in TimeframeOptions) BaseTfBox.Items.Add(s);
+            foreach (var timeframe in BaseTimeframeOptions) BaseTfBox.Items.Add(timeframe.ToString());
         if (TargetTfBox.Items.Count == 0)
         {
             TargetTfBox.Items.Add("(none)");

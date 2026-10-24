@@ -7,7 +7,8 @@ namespace AlgoTrading.Aggregation;
 /// <summary>
 /// Aggregates base-timeframe bars to higher timeframes per Section 3.8.
 /// Intraday targets require integer-multiple bases; D/W/M use daily base
-/// directly. All windows align to NSE session start (09:15 IST).
+/// directly. Intraday windows start at the first supplied candle of each IST date.
+/// Every supplied candle participates, including shortened and special sessions.
 /// </summary>
 public static class TimeframeAggregator
 {
@@ -85,53 +86,49 @@ public static class TimeframeAggregator
         var outOi = new List<decimal>(cap);
 
         int i = 0;
+        DateTime dayKey = default;
+        DateTime dayStart = default;
         while (i < count)
         {
-            DateTime ist = SessionCalendar.ToIst(dt[i]);
-            int m = SessionCalendar.MinutesSinceSessionStartIst(ist);
-            if (m < 0 || m >= SessionCalendar.SessionLengthMinutes) { i++; continue; }
-
-            int bucketIdx       = m / targetMinutes;
-            int bucketEndOffset = (bucketIdx + 1) * targetMinutes;
-            DateTime dayKey     = ist.Date;
+            DateTime ist = ToIst(dt[i]);
+            if (ist.Date != dayKey)
+            {
+                dayKey = ist.Date;
+                dayStart = ist;
+            }
+            long bucket = (ist.Ticks - dayStart.Ticks) / TimeSpan.TicksPerMinute / targetMinutes;
 
             int j = i;
             while (j < count)
             {
-                DateTime cur = SessionCalendar.ToIst(dt[j]);
+                DateTime cur = ToIst(dt[j]);
                 if (cur.Date != dayKey) break;
-                int mm = SessionCalendar.MinutesSinceSessionStartIst(cur);
-                if (mm < 0 || mm >= SessionCalendar.SessionLengthMinutes) break;
-                if (mm >= bucketEndOffset) break;
+                if ((cur.Ticks - dayStart.Ticks) / TimeSpan.TicksPerMinute / targetMinutes != bucket) break;
                 j++;
             }
 
-            int barsInBucket = j - i;
-            if (barsInBucket == barsPerBucket)
+            decimal fOp = op[i];
+            decimal fHi = hi[i];
+            decimal fLo = lo[i];
+            decimal fVo = vo[i];
+            for (int k = i + 1; k < j; k++)
             {
-                decimal fOp = op[i];
-                decimal fHi = hi[i];
-                decimal fLo = lo[i];
-                decimal fVo = vo[i];
-                for (int k = i + 1; k < j; k++)
-                {
-                    decimal hk = hi[k];
-                    if (hk > fHi) fHi = hk;
-                    decimal lk = lo[k];
-                    if (lk < fLo) fLo = lk;
-                    fVo += vo[k];
-                }
-                decimal fCl = cl[j - 1];
-                decimal fOi = oi[j - 1];
-
-                outDt.Add(dt[i]);
-                outOp.Add(fOp);
-                outHi.Add(fHi);
-                outLo.Add(fLo);
-                outCl.Add(fCl);
-                outVo.Add(fVo);
-                outOi.Add(fOi);
+                decimal hk = hi[k];
+                if (hk > fHi) fHi = hk;
+                decimal lk = lo[k];
+                if (lk < fLo) fLo = lk;
+                fVo += vo[k];
             }
+            decimal fCl = cl[j - 1];
+            decimal fOi = oi[j - 1];
+
+            outDt.Add(dt[i]);
+            outOp.Add(fOp);
+            outHi.Add(fHi);
+            outLo.Add(fLo);
+            outCl.Add(fCl);
+            outVo.Add(fVo);
+            outOi.Add(fOi);
 
             i = j;
         }
@@ -177,10 +174,10 @@ public static class TimeframeAggregator
         int i = 0;
         while (i < count)
         {
-            DateTime dayKey = SessionCalendar.ToIst(dt[i]).Date;
+            DateTime dayKey = ToIst(dt[i]).Date;
             int startI = i;
             i++;
-            while (i < count && SessionCalendar.ToIst(dt[i]).Date == dayKey) i++;
+            while (i < count && ToIst(dt[i]).Date == dayKey) i++;
             int endI = i;
 
             decimal fOp = op[startI];
@@ -251,10 +248,10 @@ public static class TimeframeAggregator
         int i = 0;
         while (i < count)
         {
-            long key = GroupKey(SessionCalendar.ToIst(dt[i]), target.Unit);
+            long key = GroupKey(ToIst(dt[i]), target.Unit);
             int startI = i;
             i++;
-            while (i < count && GroupKey(SessionCalendar.ToIst(dt[i]), target.Unit) == key) i++;
+            while (i < count && GroupKey(ToIst(dt[i]), target.Unit) == key) i++;
             int endI = i;
 
             decimal fOp = op[startI];
@@ -299,7 +296,10 @@ public static class TimeframeAggregator
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static long WeekKey(DateTime istDate)
     {
-        var (y, w) = SessionCalendar.GetIsoWeek(istDate);
+        var y = System.Globalization.ISOWeek.GetYear(istDate);
+        var w = System.Globalization.ISOWeek.GetWeekOfYear(istDate);
         return (long)y * 100 + w;
     }
+
+    private static DateTime ToIst(DateTime utc) => utc.AddMinutes(330);
 }

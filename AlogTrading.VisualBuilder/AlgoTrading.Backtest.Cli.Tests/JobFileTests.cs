@@ -4,6 +4,20 @@ namespace AlgoTrading.Backtest.Cli.Tests;
 
 public class JobFileTests
 {
+    [Theory]
+    [InlineData("RealizedOnly")]
+    [InlineData("IncludeUnrealized")]
+    public void Load_PreservesRiskChoice(string basis)
+    {
+        var path=WriteJob("{\"schemaVersion\":1,\"strategyFile\":\"x.json\",\"instrumentToken\":1,\"from\":\"2026-01-01\",\"to\":\"2026-02-01\",\"mode\":\"Single\",\"lossBasis\":\""+basis+"\",\"tradedCapital\":50000}");
+        try
+        {
+            var job=JobFile.Load(path);
+            Assert.Equal(Enum.Parse<AlgoTrading.Models.RiskLossBasis>(basis),job.LossBasis);
+            Assert.Equal(50000m,job.TradedCapital);
+        }
+        finally{File.Delete(path);}
+    }
     private static string WriteJob(string content)
     {
         var path = Path.Combine(Path.GetTempPath(), "job-" + Guid.NewGuid().ToString("N") + ".job.json");
@@ -34,6 +48,8 @@ public class JobFileTests
             Assert.Equal(JobMode.Single, j.Mode);
             Assert.Equal(12, j.StrategyId);
             Assert.Null(j.TunedId);
+            Assert.Equal(AlgoTrading.Models.RiskLossBasis.RealizedOnly,j.LossBasis);
+            Assert.Equal(50000m,j.TradedCapital);
         }
         finally { File.Delete(path); }
     }

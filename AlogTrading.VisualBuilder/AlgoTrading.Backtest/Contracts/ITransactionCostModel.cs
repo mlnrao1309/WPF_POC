@@ -2,8 +2,11 @@ using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Contracts;
 
+public enum TradeCostScope { RoundTrip, Entry }
+
 public readonly struct TradeExecutionContext
 {
+    public TradeCostScope Scope { get; init; }
     public required decimal EntryPrice { get; init; }
     public required decimal ExitPrice { get; init; }
     public required int Quantity { get; init; }

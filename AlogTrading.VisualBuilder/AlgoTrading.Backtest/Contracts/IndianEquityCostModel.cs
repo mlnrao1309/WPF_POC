@@ -32,7 +32,13 @@ public sealed class IndianEquityCostModel : ITransactionCostModel
             turnoverSell = ctx.EntryPrice * qty;
         }
 
-        decimal brokerage = block.BrokeragePerOrder * 2m;
+        if (ctx.Scope == TradeCostScope.Entry)
+        {
+            if (ctx.Direction == Direction.Long) turnoverSell = 0m;
+            else turnoverBuy = 0m;
+        }
+
+        decimal brokerage = block.BrokeragePerOrder * (ctx.Scope == TradeCostScope.Entry ? 1m : 2m);
 
         decimal stt;
         if (ctx.Mode == ExecutionMode.Intraday)

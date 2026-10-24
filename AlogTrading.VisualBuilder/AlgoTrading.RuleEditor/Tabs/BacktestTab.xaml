@@ -20,7 +20,6 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
                         <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Grid.Column="0" Text="From"
@@ -33,11 +32,15 @@
                     <DatePicker Grid.Row="1" Grid.Column="1" x:Name="ToPicker" Width="160"
                                 HorizontalAlignment="Left" Margin="0,4"/>
 
-                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Base timeframe"
-                               VerticalAlignment="Center" Margin="0,4,8,4"/>
-                    <TextBox Grid.Row="2" Grid.Column="1" x:Name="BaseTfBox" Width="160"
-                             HorizontalAlignment="Left" Margin="0,4" IsReadOnly="True"/>
                 </Grid>
+
+                <TextBlock Text="Risk loss basis" Margin="0,10,0,4"/>
+                <ComboBox x:Name="LossBasisBox" HorizontalAlignment="Stretch"
+                          DisplayMemberPath="Value" SelectedValuePath="Key"/>
+                <TextBlock Text="Capital ₹50,000 · Daily limit ₹1,000 (2%) · Monthly limit ₹2,500 (5%). Breaches mark the assessment only; simulated trades continue."
+                           TextWrapping="Wrap" Foreground="DimGray" Margin="0,4,0,0"/>
+                <TextBlock Text="Open-position losses are measured at bar closes. Day and month boundaries use IST."
+                           TextWrapping="Wrap" Foreground="DimGray"/>
 
                 <TextBlock Text="Instruments" Margin="0,10,0,4"/>
                 <ListBox x:Name="TokenListBox" Height="110" SelectionMode="Extended"
@@ -86,6 +89,8 @@
                 BorderBrush="#C8D0DA" BorderThickness="0,0,0,1">
             <StackPanel>
                 <TextBlock Text="Recent runs" FontWeight="SemiBold"/>
+                <TextBlock Text="Indeterminate approval means not assessed. This risk assessment does not change StrategyMain.IsApproved."
+                           TextWrapping="Wrap" Foreground="DimGray"/>
                 <TextBlock x:Name="RunHistoryStatus" TextWrapping="Wrap" Foreground="DarkRed"/>
             </StackPanel>
         </Border>
@@ -103,6 +108,8 @@
                 <DataGridTextColumn Header="Instrument" Binding="{Binding Instrument}" Width="90"/>
                 <DataGridTextColumn Header="Trades" Binding="{Binding TotalTrades}" Width="65"/>
                 <DataGridTextColumn Header="Net P&amp;L" Binding="{Binding NetPnL, StringFormat=N2}" Width="100"/>
+                <DataGridTextColumn Header="Loss basis" Binding="{Binding LossBasis}" Width="135"/>
+                <DataGridCheckBoxColumn Header="Backtest approved" Binding="{Binding IsBacktestApproved}" IsThreeState="True" Width="125"/>
                 <DataGridTextColumn Header="Run Id" Binding="{Binding RunId}" Width="*"/>
                 <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="200"/>
             </DataGrid.Columns>

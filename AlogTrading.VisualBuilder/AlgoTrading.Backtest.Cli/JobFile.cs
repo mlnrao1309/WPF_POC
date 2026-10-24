@@ -1,5 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Cli;
 
@@ -13,6 +15,8 @@ public sealed class JobFile
     public DateOnly From { get; init; }
     public DateOnly To { get; init; }
     public JobMode Mode { get; init; }
+    public RiskLossBasis LossBasis { get; init; }
+    public decimal TradedCapital { get; init; } = 50_000m;
     public int? StrategyId { get; init; }
     public int? TunedId { get; init; }
     public string SourcePath { get; init; } = "";
@@ -45,6 +49,8 @@ public sealed class JobFile
 
         if (!Enum.TryParse<JobMode>(dto.Mode, ignoreCase: true, out var mode))
             throw new InvalidDataException("Invalid mode: " + dto.Mode);
+        if (!Enum.IsDefined(dto.LossBasis) || dto.TradedCapital <= 0m)
+            throw new InvalidDataException("Invalid loss basis or traded capital.");
 
         return new JobFile
         {
@@ -54,6 +60,8 @@ public sealed class JobFile
             From = from,
             To = to,
             Mode = mode,
+            LossBasis = dto.LossBasis,
+            TradedCapital = dto.TradedCapital,
             StrategyId = dto.StrategyId,
             TunedId = dto.TunedId,
             SourcePath = Path.GetFullPath(path)
@@ -69,6 +77,9 @@ internal sealed class JobFileDto
     public string From { get; set; } = "";
     public string To { get; set; } = "";
     public string Mode { get; set; } = "Single";
+    [JsonConverter(typeof(JsonStringEnumConverter<RiskLossBasis>))]
+    public RiskLossBasis LossBasis { get; set; } = RiskLossBasis.RealizedOnly;
+    public decimal TradedCapital { get; set; } = 50_000m;
     public int? StrategyId { get; set; }
     public int? TunedId { get; set; }
 }

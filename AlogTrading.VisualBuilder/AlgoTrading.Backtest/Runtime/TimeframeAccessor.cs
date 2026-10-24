@@ -48,20 +48,15 @@ public sealed class TimeframeAccessor
         var map = new int[n];
         if (m == 0) { for (int i = 0; i < n; i++) map[i] = -1; return map; }
 
-        var baseDt = baseSeries.DateTime.Span;
-        var tfDt = tfBars.DateTime.Span;
-        var baseDur = EstimateDuration(baseSeries.Timeframe);
-        var tfDur = EstimateDuration(tfBars.Timeframe);
-
         int j = -1;
         for (int i = 0; i < n; i++)
         {
-            DateTime baseEnd = (i + 1 < n) ? baseDt[i + 1] : baseDt[i].Add(baseDur);
+            DateTime baseEnd = BarEnd(baseSeries, i);
 
             while (j + 1 < m)
             {
                 int k = j + 1;
-                DateTime tfEnd = (k + 1 < m) ? tfDt[k + 1] : tfDt[k].Add(tfDur);
+                DateTime tfEnd = BarEnd(tfBars, k);
 
                 if (tfEnd <= baseEnd) j = k;
                 else break;
@@ -71,17 +66,22 @@ public sealed class TimeframeAccessor
         return map;
     }
 
-    private static TimeSpan EstimateDuration(Timeframe tf)
+    internal static DateTime BarEnd(IBarSeries series, int index)
     {
+        if (series is SqlBarSeries sql && sql.CloseTime.Length == series.Count)
+            return sql.CloseTime.Span[index];
+        var open = series.DateTime.Span[index];
+        var tf = series.Timeframe;
         if (tf.Unit is TimeframeUnit.m or TimeframeUnit.H)
-            return TimeSpan.FromMinutes(tf.ToMinutes());
-
-        return tf.Unit switch
+            return open.AddMinutes(tf.ToMinutes());
+        var localDate = open.AddMinutes(330).Date;
+        var end = tf.Unit switch
         {
-            TimeframeUnit.D => TimeSpan.FromHours(25),
-            TimeframeUnit.W => TimeSpan.FromDays(8),
-            TimeframeUnit.M => TimeSpan.FromDays(32),
-            _ => TimeSpan.FromDays(1)
+            TimeframeUnit.D => localDate.AddDays(1),
+            TimeframeUnit.W => localDate.AddDays(7 - ((int)localDate.DayOfWeek + 6) % 7),
+            TimeframeUnit.M => new DateTime(localDate.Year, localDate.Month, 1).AddMonths(1),
+            _ => throw new InvalidOperationException($"Unsupported timeframe '{tf}'")
         };
+        return end.AddMinutes(-330);
     }
 }

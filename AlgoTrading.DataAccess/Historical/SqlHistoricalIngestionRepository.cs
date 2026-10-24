@@ -114,6 +114,19 @@ namespace AlgoTrading.DataAccess.Historical
             }
         }
 
+        private async Task<TimeSpan?> GetHistoricalSessionCloseAsync(long instrumentToken, CancellationToken cancellationToken)
+        {
+            // Historical selection can include any instrument exposed by the view,
+            // not just members of the CAS watch list used by live polling.
+            const string sql = "SELECT TOP (1) ClosesAt FROM dbo.vw_CAS_Instruments WHERE InstrumentToken = @InstrumentToken;";
+            using var connection = new SqlConnection(this.connectionString);
+            await connection.OpenAsync(cancellationToken);
+            using var command = new SqlCommand(sql, connection);
+            command.Parameters.Add("@InstrumentToken", SqlDbType.BigInt).Value = instrumentToken;
+            object? value = await command.ExecuteScalarAsync(cancellationToken);
+            return value == null || value == DBNull.Value ? null : (TimeSpan)value;
+        }
+
         public async Task PersistChunkAndCheckpointAsync(HistoricalChunkRequest request, string providerPayload,
             CancellationToken cancellationToken)
         {
@@ -153,33 +166,37 @@ namespace AlgoTrading.DataAccess.Historical
             string databaseTimeframe = HistoricalStreamTypes.GetDatabaseTimeframe(request.StreamType);
             Timeframe timeframe = databaseTimeframe == "D" ? Timeframe.Day
                 : Timeframe.Minutes(int.Parse(databaseTimeframe, CultureInfo.InvariantCulture));
+            DateOnly boundsFrom = this.calendarSelection?.SessionBoundsFrom ?? new DateOnly(2026, 8, 3);
+            bool needsSessionBounds = DateOnly.FromDateTime(request.RangeEnd) >= boundsFrom;
+            TimeSpan? sessionClose = needsSessionBounds
+                ? await this.GetHistoricalSessionCloseAsync(request.InstrumentToken, cancellationToken) : null;
             ExchangeCalendarSnapshot? calendar = null;
-            if (instrument != null && this.calendarRepository != null && this.calendarSelection != null)
+            if (needsSessionBounds && this.calendarRepository != null && this.calendarSelection != null)
                 calendar = await this.calendarRepository.LoadAsync(this.calendarSelection.ExchangeCode,
                     this.calendarSelection.SegmentCode, this.calendarSelection.Revision, DateTimeOffset.UtcNow, cancellationToken)
                     ?? throw new InvalidOperationException("The selected trading calendar is unavailable for runtime publication.");
             var sessionDays = calendar?.Days.ToDictionary(day => day.Date);
-            Candle[]? completed = instrument == null ? null : candles.AsEnumerable().Select(row => Candle.Create(
+            Candle[] completed = candles.AsEnumerable().Select(row => Candle.Create(
                 MarketTimestamp.FromDatabase(row.Field<DateTime>("TimeStamp")), timeframe,
                 row.Field<decimal>("Open"), row.Field<decimal>("High"), row.Field<decimal>("Low"),
                 row.Field<decimal>("Close"), row.Field<long>("Volume"), row.Field<long>("OI")))
                 .Select(candle =>
                 {
+                    if (DateOnly.FromDateTime(candle.OpenTime.ToOffset(TimeSpan.FromMinutes(330)).Date) < boundsFrom)
+                        return WithoutSessionBounds(candle, timeframe);
                     // Match warmup: a daily bar and a shortened final bar close at the exchange session end.
                     if (sessionDays != null && sessionDays.TryGetValue(DateOnly.FromDateTime(candle.OpenTime.Date), out var session))
                     {
                         if (!session.ClosesAt.HasValue)
                             throw new InvalidDataException($"History contains a candle on closed trading date {candle.OpenTime:d}.");
-                        DateTimeOffset close = MarketTimestamp.FromDatabase(session.Date.ToDateTime(session.ClosesAt.Value));
-                        if (timeframe == Timeframe.Day || candle.CloseTime > close)
-                            candle = candle with { CloseTime = close };
+                        return ApplySessionClose(candle, timeframe, sessionClose ?? session.ClosesAt.Value.ToTimeSpan());
                     }
-                    return candle;
+                    return sessionClose.HasValue ? ApplySessionClose(candle, timeframe, sessionClose.Value) : candle;
                 })
-                .Where(candle => candle.CloseTime <= MarketTimestamp.FromDatabase(request.CandleEnd!.Value))
+                .Where(candle => !request.CandleEnd.HasValue || candle.CloseTime <= MarketTimestamp.FromDatabase(request.CandleEnd.Value))
                 .ToArray();
             Candles? replacement = null;
-            if (completed is { Length: > 0 })
+            if (instrument != null && completed is { Length: > 0 })
             {
                 var current = instrument!.TryGetCandles(timeframe, out var existing)
                     ? existing.ToDictionary(candle => candle.CloseTime) : new Dictionary<DateTimeOffset, Candle>();
@@ -216,6 +233,36 @@ namespace AlgoTrading.DataAccess.Historical
                 if (replacement != null)
                     instrument!.SetCandles(replacement);
             }
+        }
+
+        internal static Candle WithoutSessionBounds(Candle candle, Timeframe timeframe)
+            => candle with { CloseTime = timeframe.Unit switch
+            {
+                TimeframeUnit.Minute => candle.OpenTime.AddMinutes(timeframe.Count),
+                TimeframeUnit.Hour => candle.OpenTime.AddHours(timeframe.Count),
+                TimeframeUnit.Day => candle.OpenTime.AddDays(timeframe.Count),
+                _ => candle.CloseTime
+            } };
+
+        internal static Candle ApplySessionClose(Candle candle, Timeframe timeframe, TimeSpan closesAt)
+        {
+            if (closesAt < TimeSpan.Zero || closesAt >= TimeSpan.FromDays(1))
+                throw new InvalidDataException("Historical session ClosesAt must be a time within the IST day.");
+            var marketOpen = candle.OpenTime.ToOffset(TimeSpan.FromMinutes(330));
+            var close = MarketTimestamp.FromDatabase(marketOpen.Date.Add(closesAt));
+            if (close <= candle.OpenTime)
+                throw new InvalidDataException($"Historical candle {candle.OpenTime:O} opens at or after configured session close {close:O}.");
+
+            // Recompute the nominal close so Candle.Create's regular NSE fallback
+            // cannot truncate instruments whose configured session ends later.
+            var nominalClose = timeframe.Unit switch
+            {
+                TimeframeUnit.Minute => candle.OpenTime.AddMinutes(timeframe.Count),
+                TimeframeUnit.Hour => candle.OpenTime.AddHours(timeframe.Count),
+                TimeframeUnit.Day => close,
+                _ => candle.CloseTime
+            };
+            return candle with { CloseTime = (nominalClose < close ? nominalClose : close).ToOffset(candle.OpenTime.Offset) };
         }
 
         private static DataTable BuildCandleTable(HistoricalChunkRequest request, string providerPayload)

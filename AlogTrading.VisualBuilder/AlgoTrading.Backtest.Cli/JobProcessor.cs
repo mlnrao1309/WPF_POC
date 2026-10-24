@@ -48,8 +48,8 @@ public sealed class JobProcessor
             var ruleJson = File.ReadAllText(strategyPath);
             var strategyName = ExtractStrategyName(ruleJson);
 
-            var fromUtc = DateTime.SpecifyKind(job.From.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-            var toUtc = DateTime.SpecifyKind(job.To.ToDateTime(new TimeOnly(23, 59, 59)), DateTimeKind.Utc);
+            var fromUtc = DateTime.SpecifyKind(job.From.ToDateTime(TimeOnly.MinValue).AddMinutes(-330), DateTimeKind.Utc);
+            var toUtc = DateTime.SpecifyKind(job.To.ToDateTime(new TimeOnly(23, 59, 59)).AddMinutes(-330), DateTimeKind.Utc);
 
             var mode = job.Mode switch
             {
@@ -67,6 +67,8 @@ public sealed class JobProcessor
                 FromUtc = fromUtc,
                 ToUtc = toUtc,
                 Mode = mode,
+                LossBasis = job.LossBasis,
+                TradedCapital = job.TradedCapital,
                 MaxParallelism = _maxParallelism
             };
 

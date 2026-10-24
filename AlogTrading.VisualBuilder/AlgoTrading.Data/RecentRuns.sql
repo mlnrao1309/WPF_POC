@@ -1,4 +1,149 @@
--- Run against Algo_Trading_CFCore. No table changes or historical imports.
+-- Preparation uses temporary tables only. It never inserts strategy/run/result rows.
+CREATE OR ALTER PROCEDURE dbo.StrategyBacktest_PrepareData
+    @InstrumentToken bigint, @RuleJson nvarchar(max),
+    @FromUtc datetime2(7), @ToUtc datetime2(7), @ValidateOnly bit = 0
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+    IF ISJSON(@RuleJson) <> 1 OR @InstrumentToken <= 0 OR @FromUtc >= @ToUtc
+        THROW 51001, 'Invalid strategy, instrument or data range.', 1;
+    DECLARE @Base nvarchar(10)=JSON_VALUE(@RuleJson,'$.baseTimeframe'),
+            @Evaluation nvarchar(10)=JSON_VALUE(@RuleJson,'$.evaluationTimeframe'),
+            @FromLocal datetime2(7)=DATEADD(minute,330,@FromUtc),
+            @ToLocal datetime2(7)=DATEADD(minute,330,@ToUtc),
+            @Message nvarchar(2048), @Symbol nvarchar(100);
+    IF @Base IS NULL OR @Evaluation IS NULL
+        THROW 51001, 'Base and evaluation timeframes are required.', 1;
+    SELECT TOP(1) @Symbol=TradingSymbol FROM dbo.MarketWatch
+        WHERE InstrumentToken=@InstrumentToken AND IsDeleted=0 ORDER BY Idx;
+
+    CREATE TABLE #Frames(Code nvarchar(10) PRIMARY KEY, DbCode nvarchar(10), Minutes int NULL, Kind char(1));
+    CREATE TABLE #Nodes(Id int IDENTITY PRIMARY KEY, Payload nvarchar(max), Processed bit DEFAULT(0));
+    INSERT #Nodes(Payload) VALUES(@RuleJson);
+    DECLARE @NodeId int, @Payload nvarchar(max), @NeedDaily bit=0;
+    WHILE EXISTS(SELECT 1 FROM #Nodes WHERE Processed=0)
+    BEGIN
+        SELECT TOP(1) @NodeId=Id,@Payload=Payload FROM #Nodes WHERE Processed=0 ORDER BY Id;
+        UPDATE #Nodes SET Processed=1 WHERE Id=@NodeId;
+        INSERT #Frames(Code)
+            SELECT DISTINCT CONVERT(nvarchar(10),j.value) FROM OPENJSON(@Payload) j
+            WHERE j.[key] IN ('evaluationTimeframe','baseTimeframe','timeframe') AND j.type=1
+              AND NOT EXISTS(SELECT 1 FROM #Frames f WHERE f.Code=j.value);
+        IF EXISTS(SELECT 1 FROM OPENJSON(@Payload) WHERE [key]='indicator' AND value IN ('PivotPointsClassic','PivotPointsCamarilla')) SET @NeedDaily=1;
+        INSERT #Nodes(Payload) SELECT value FROM OPENJSON(@Payload) WHERE type IN (4,5);
+    END;
+    IF @NeedDaily=1 AND NOT EXISTS(SELECT 1 FROM #Frames WHERE Code='D') INSERT #Frames(Code) VALUES('D');
+    UPDATE #Frames SET Kind=CASE WHEN Code IN ('D','W','M') THEN Code ELSE 'I' END,
+        Minutes=CASE WHEN RIGHT(Code,1) COLLATE Latin1_General_100_BIN2='m' THEN TRY_CONVERT(int,LEFT(Code,LEN(Code)-1))
+                     WHEN RIGHT(Code,1) COLLATE Latin1_General_100_BIN2='H' THEN TRY_CONVERT(int,LEFT(Code,LEN(Code)-1))*60 END;
+    IF EXISTS(SELECT 1 FROM #Frames WHERE Kind='I' AND (Minutes IS NULL OR Minutes<=0))
+        THROW 51001, 'Strategy contains an unsupported timeframe.', 1;
+    UPDATE #Frames SET DbCode=CASE WHEN Kind='I' THEN CONVERT(nvarchar(10),Minutes) ELSE Code END;
+
+    -- Stored timestamps are IST. Convert only request boundaries and returned timestamps.
+    -- Use stored rows as supplied; there is no trading-day/hour or completeness policy.
+    CREATE TABLE #Candles(Code nvarchar(10), OpensAt datetime2(7), ClosesAt datetime2(7),
+        [Open] decimal(28,8), High decimal(28,8), Low decimal(28,8), [Close] decimal(28,8),
+        Volume decimal(28,8), OI decimal(28,8), SourceCode nvarchar(10) NULL);
+    CREATE INDEX IX_PreparedCandles ON #Candles(Code,OpensAt);
+    INSERT #Candles
+        SELECT f.Code,o.TimeStamp,
+            CASE f.Kind WHEN 'I' THEN DATEADD(minute,f.Minutes,o.TimeStamp)
+                WHEN 'D' THEN DATEADD(day,1,CONVERT(date,o.TimeStamp))
+                WHEN 'W' THEN DATEADD(day,7-DATEDIFF(day,'19000101',CONVERT(date,o.TimeStamp))%7,CONVERT(date,o.TimeStamp))
+                ELSE DATEADD(day,1,EOMONTH(o.TimeStamp)) END,
+            o.[Open],o.High,o.Low,o.[Close],o.Volume,o.OI,NULL
+        FROM dbo.vw_InstrumentBars o JOIN #Frames f ON RTRIM(o.TimeFrame)=f.DbCode
+        WHERE o.InstrumentToken=@InstrumentToken AND o.TimeStamp>=@FromLocal AND o.TimeStamp<=@ToLocal;
+
+    CREATE TABLE #SourceRows(OpensAt datetime2(7), [Open] decimal(28,8), High decimal(28,8), Low decimal(28,8),
+        [Close] decimal(28,8), Volume decimal(28,8), OI decimal(28,8));
+    DECLARE @Code nvarchar(10), @Kind char(1), @Minutes int, @Source nvarchar(10), @SourceMinutes int;
+    DECLARE frames CURSOR LOCAL FAST_FORWARD FOR SELECT Code,Kind,Minutes FROM #Frames
+        WHERE NOT EXISTS(SELECT 1 FROM #Candles c WHERE c.Code=#Frames.Code)
+        ORDER BY CASE Kind WHEN 'I' THEN 0 WHEN 'D' THEN 1 WHEN 'W' THEN 2 ELSE 3 END,Minutes;
+    OPEN frames;
+    FETCH NEXT FROM frames INTO @Code,@Kind,@Minutes;
+    WHILE @@FETCH_STATUS=0
+    BEGIN
+        SET @Source=NULL;
+        SET @SourceMinutes=NULL;
+        -- Locate a compatible stored source only when the required timeframe is absent.
+        -- Never attempt to split a larger source candle into smaller target candles.
+        SELECT TOP(1) @Source=RTRIM(o.TimeFrame), @SourceMinutes=TRY_CONVERT(int,RTRIM(o.TimeFrame))
+        FROM dbo.vw_InstrumentBars o
+        WHERE o.InstrumentToken=@InstrumentToken AND o.TimeStamp>=@FromLocal AND o.TimeStamp<=@ToLocal
+          AND ((@Kind='I' AND TRY_CONVERT(int,RTRIM(o.TimeFrame))>0
+                AND TRY_CONVERT(int,RTRIM(o.TimeFrame))<@Minutes
+                AND @Minutes%NULLIF(TRY_CONVERT(int,RTRIM(o.TimeFrame)),0)=0)
+            OR (@Kind IN ('D','W','M') AND TRY_CONVERT(int,RTRIM(o.TimeFrame))>0)
+            OR (@Kind IN ('W','M') AND RTRIM(o.TimeFrame)='D'))
+        ORDER BY CASE WHEN @Kind IN ('W','M') AND RTRIM(o.TimeFrame)='D' THEN 0
+                      WHEN RTRIM(o.TimeFrame)=(SELECT DbCode FROM #Frames WHERE Code=@Base) THEN 1 ELSE 2 END,
+            TRY_CONVERT(int,RTRIM(o.TimeFrame)) DESC;
+        IF @Source IS NULL
+        BEGIN
+            SET @Message=CONCAT('Cannot supply or aggregate required ',@Code,' candles for instrument ',@InstrumentToken,
+                ': no compatible stored source exists in the requested range. Preparation stopped.');
+            THROW 51001,@Message,1;
+        END;
+        TRUNCATE TABLE #SourceRows;
+        INSERT #SourceRows SELECT o.TimeStamp,o.[Open],o.High,o.Low,o.[Close],o.Volume,o.OI
+            FROM dbo.vw_InstrumentBars o
+            WHERE o.InstrumentToken=@InstrumentToken AND RTRIM(o.TimeFrame)=@Source
+              AND o.TimeStamp>=@FromLocal AND o.TimeStamp<=@ToLocal;
+
+        ;WITH Anchored AS
+        (
+            SELECT *,MIN(OpensAt) OVER(PARTITION BY CONVERT(date,OpensAt)) DayStart FROM #SourceRows
+        ), Bucketed AS
+        (
+            SELECT *,CASE @Kind
+                WHEN 'I' THEN DATEADD(minute,DATEDIFF(minute,DayStart,OpensAt)/@Minutes*@Minutes,DayStart)
+                WHEN 'D' THEN CONVERT(datetime2(7),CONVERT(date,OpensAt))
+                WHEN 'W' THEN CONVERT(datetime2(7),DATEADD(day,-DATEDIFF(day,'19000101',CONVERT(date,OpensAt))%7,CONVERT(date,OpensAt)))
+                ELSE CONVERT(datetime2(7),DATEFROMPARTS(YEAR(OpensAt),MONTH(OpensAt),1)) END BucketStart
+            FROM Anchored
+        ), Ranked AS
+        (
+            SELECT *,ROW_NUMBER() OVER(PARTITION BY BucketStart ORDER BY OpensAt) FirstRow,
+                ROW_NUMBER() OVER(PARTITION BY BucketStart ORDER BY OpensAt DESC) LastRow FROM Bucketed
+        )
+        INSERT #Candles
+            SELECT @Code,MIN(OpensAt),
+                CASE @Kind WHEN 'I' THEN DATEADD(minute,@Minutes,BucketStart)
+                    WHEN 'D' THEN DATEADD(day,1,BucketStart) WHEN 'W' THEN DATEADD(day,7,BucketStart)
+                    ELSE DATEADD(month,1,BucketStart) END,
+                MAX(CASE WHEN FirstRow=1 THEN [Open] END),MAX(High),MIN(Low),
+                MAX(CASE WHEN LastRow=1 THEN [Close] END),SUM(Volume),MAX(CASE WHEN LastRow=1 THEN OI END),
+                CASE WHEN @Source='D' THEN 'D' ELSE CONCAT(@SourceMinutes,'m') END
+            FROM Ranked GROUP BY BucketStart;
+        IF NOT EXISTS(SELECT 1 FROM #Candles WHERE Code=@Code)
+        BEGIN
+            SET @Message=CONCAT('Cannot build required ',@Code,' candles from ',@Source,'. Preparation stopped.');
+            THROW 51001,@Message,1;
+        END;
+        FETCH NEXT FROM frames INTO @Code,@Kind,@Minutes;
+    END;
+    CLOSE frames; DEALLOCATE frames;
+    IF @ValidateOnly=1
+    BEGIN
+        SELECT Code AS TimeframeCode,COUNT(*) CandleCount FROM #Candles GROUP BY Code;
+        RETURN;
+    END;
+    SELECT Code AS TimeframeCode,SourceCode AS SourceTimeframeCode,COALESCE(@Symbol,'') AS Symbol,
+        DATEADD(minute,-330,OpensAt) AS [DateTime],DATEADD(minute,-330,ClosesAt) AS ClosedAt,
+        [Open],High,Low,[Close],Volume,OI FROM #Candles ORDER BY Code,OpensAt;
+END;
+GO
+
+IF COL_LENGTH('dbo.StrategyBacktestResult', 'IsBacktestApproved') IS NULL
+    ALTER TABLE dbo.StrategyBacktestResult ADD IsBacktestApproved bit NULL;
+IF COL_LENGTH('dbo.StrategyBacktestResult', 'RiskAssessmentJson') IS NULL
+    ALTER TABLE dbo.StrategyBacktestResult ADD RiskAssessmentJson nvarchar(max) NULL
+        CONSTRAINT CK_StrategyBacktestResult_RiskAssessmentJson CHECK (RiskAssessmentJson IS NULL OR ISJSON(RiskAssessmentJson) = 1);
+GO
 CREATE OR ALTER PROCEDURE dbo.StrategyBacktest_Start
     @RunId uniqueidentifier,
     @StrategyName nvarchar(100),
@@ -83,7 +228,10 @@ BEGIN
         WinRatePercent = TRY_CONVERT(decimal(18,8), JSON_VALUE(@ResultJson, '$.metrics.winRatePct')),
         TradesJson = JSON_QUERY(@ResultJson, '$.trades'),
         EquityJson = JSON_QUERY(@ResultJson, '$.equityCurve'),
-        BreakdownJson = JSON_QUERY(@ResultJson, '$.metrics')
+        BreakdownJson = JSON_QUERY(@ResultJson, '$.metrics'),
+        IsBacktestApproved = CASE JSON_VALUE(@ResultJson, '$.riskAssessment.isBacktestApproved')
+            WHEN 'true' THEN 1 WHEN 'false' THEN 0 ELSE NULL END,
+        RiskAssessmentJson = JSON_QUERY(@ResultJson, '$.riskAssessment')
     WHERE RunId = @RunId AND RunStatus = 'Running';
     IF @@ROWCOUNT <> 1
         THROW 51000, 'Running backtest history row was not found.', 1;
@@ -119,6 +267,7 @@ BEGIN
         JSON_VALUE(r.ConfigurationJson, '$.rule.direction') AS Direction,
         r.StartedAt, r.RunStatus AS Status, r.ErrorMessage,
         r.NetProfit AS NetPnL, r.ClosedTrades AS TotalTrades,
+        r.IsBacktestApproved, JSON_VALUE(r.ConfigurationJson, '$.lossBasis') AS LossBasis,
         r.ArtifactsPath AS ResultFilePath
     FROM dbo.StrategyBacktestResult r
     JOIN dbo.StrategyMain s ON s.StrategyId = r.StrategyId

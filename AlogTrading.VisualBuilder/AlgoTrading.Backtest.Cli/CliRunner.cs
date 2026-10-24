@@ -24,8 +24,8 @@ public static class CliRunner
 
             logger.Information("Validating... OK");
 
-            var fromUtc = DateTime.SpecifyKind(args.From.ToDateTime(TimeOnly.MinValue), DateTimeKind.Utc);
-            var toUtc = DateTime.SpecifyKind(args.To.ToDateTime(new TimeOnly(23, 59, 59)), DateTimeKind.Utc);
+            var fromUtc = DateTime.SpecifyKind(args.From.ToDateTime(TimeOnly.MinValue).AddMinutes(-330), DateTimeKind.Utc);
+            var toUtc = DateTime.SpecifyKind(args.To.ToDateTime(new TimeOnly(23, 59, 59)).AddMinutes(-330), DateTimeKind.Utc);
 
             var mode = args.Sweep ? RunMode.Sweep
                      : args.WalkForward ? RunMode.WalkForward

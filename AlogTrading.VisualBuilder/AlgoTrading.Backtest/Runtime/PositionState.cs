@@ -8,6 +8,7 @@ internal sealed class PositionState
     public Direction Direction { get; set; }
     public DateTime EntryTime { get; set; }
     public decimal EntryPrice { get; set; }
+    public decimal EntryCosts { get; set; }
     public int EntryBarIndex { get; set; }
     public int Quantity { get; set; }
     public decimal? StopLossPrice { get; set; }
@@ -23,6 +24,7 @@ internal sealed class PositionState
         Direction = Direction.Long;
         EntryTime = default;
         EntryPrice = 0m;
+        EntryCosts = 0m;
         EntryBarIndex = 0;
         Quantity = 0;
         StopLossPrice = null;

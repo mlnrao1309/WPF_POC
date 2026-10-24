@@ -4,7 +4,6 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
 using AlgoTrading.Models;
-using AlgoTrading.RuleEditor.Models;
 using AlgoTrading.RuleEditor.Services;
 using AlgoTrading.RuleEditor.Windows;
 
@@ -29,11 +28,18 @@ public partial class BacktestTab : UserControl
     private DaemonLauncherService? _daemon;
     private bool _suppressChecks;
     private bool _refreshingRuns;
+    private bool _queuing;
     private readonly DispatcherTimer _historyRefresh = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public BacktestTab()
     {
         InitializeComponent();
+        LossBasisBox.ItemsSource = new Dictionary<RiskLossBasis, string>
+        {
+            [RiskLossBasis.RealizedOnly] = "Only realized losses (default)",
+            [RiskLossBasis.IncludeUnrealized] = "Include unrealized losses on open positions"
+        };
+        LossBasisBox.SelectedValue = RiskLossBasis.RealizedOnly;
         TokenListBox.ItemsSource = _tokens;
         FromPicker.SelectedDate = DateTime.Today.AddYears(-2);
         ToPicker.SelectedDate = DateTime.Today;
@@ -53,17 +59,6 @@ public partial class BacktestTab : UserControl
         _daemon = new DaemonLauncherService(
             settings.CliExecutablePath, settings.ConfigPath, settings.LockPath);
         RefreshRunList();
-    }
-
-    public void Bind(EditorStrategy? strategy)
-    {
-        if (strategy is null) return;
-        _suppressChecks = true;
-        try
-        {
-            BaseTfBox.Text = SafeTf(strategy.Rule.BaseTimeframe);
-        }
-        finally { _suppressChecks = false; }
     }
 
     public async void RefreshRunList()
@@ -159,13 +154,18 @@ public partial class BacktestTab : UserControl
         }
     }
 
-    private void OnQueueClick(object sender, RoutedEventArgs e) => QueueInternal(ensureDaemon: false);
+    private async void OnQueueClick(object sender, RoutedEventArgs e) => await QueueInternalAsync(ensureDaemon: false);
 
-    private void OnRunNowClick(object sender, RoutedEventArgs e) => QueueInternal(ensureDaemon: true);
+    private async void OnRunNowClick(object sender, RoutedEventArgs e) => await QueueInternalAsync(ensureDaemon: true);
 
-    private void QueueInternal(bool ensureDaemon)
+    private async Task QueueInternalAsync(bool ensureDaemon)
     {
-        if (_owner is null || _queue is null) return;
+        if (_owner is null || _queue is null || _runs is null) return;
+        if (_queuing)
+        {
+            QueueStatusText.Text = "A backtest submission is already being prepared.";
+            return;
+        }
 
         var rule = _owner.CurrentRule();
         if (rule is null)
@@ -198,16 +198,6 @@ public partial class BacktestTab : UserControl
             return;
         }
 
-        // "Run now" ensures the daemon is up before writing the batch.
-        if (ensureDaemon && _daemon is not null)
-        {
-            if (!_daemon.EnsureRunning(waitMs: 15000, out var error))
-            {
-                MessageBox.Show(error, "Run now", MessageBoxButton.OK, MessageBoxImage.Error);
-                return;
-            }
-        }
-
         var mode = SweepBox.IsChecked == true ? "Sweep"
                  : WalkForwardBox.IsChecked == true ? "WalkForward"
                  : "Single";
@@ -216,13 +206,23 @@ public partial class BacktestTab : UserControl
 
         try
         {
+            _queuing = true;
+            RunNowButton.IsEnabled = false;
+            QueueStatusText.Text = "Checking all required candle data...";
+            var ruleJson = RuleDefinitionJson.Serialize(rule);
+            foreach (var token in tokens)
+                await _runs.ValidateBacktestDataAsync(token, ruleJson, from, to);
+            if (ensureDaemon && _daemon is not null && !_daemon.EnsureRunning(waitMs: 15000, out var error))
+                throw new InvalidOperationException(error);
             var result = _queue.Queue(new QueueBatchRequest
             {
                 Rule = rule,
                 InstrumentTokens = tokens,
                 From = from,
                 To = to,
-                Mode = mode
+                Mode = mode,
+                LossBasis = (RiskLossBasis)LossBasisBox.SelectedValue,
+                TradedCapital = 50_000m
             });
 
             var message = "Queued " + result.QueuedJobPaths.Count +
@@ -237,14 +237,15 @@ public partial class BacktestTab : UserControl
         }
         catch (Exception ex)
         {
-            MessageBox.Show("Failed to queue: " + ex.Message, "Queue",
+            QueueStatusText.Text = "Backtest stopped before queuing.";
+            MessageBox.Show("Backtest stopped: " + ex.Message, "Data preparation",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _queuing = false;
+            RunNowButton.IsEnabled = true;
         }
     }
 
-    private static string SafeTf(Timeframe tf)
-    {
-        try { return tf.ToString() ?? ""; }
-        catch { return ""; }
-    }
 }

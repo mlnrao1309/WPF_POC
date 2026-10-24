@@ -9,6 +9,8 @@ internal sealed class CandleTimeTests
     internal void Run()
     {
         VerifyTimestampConversion();
+        VerifyCoreCandleIntervals();
+        VerifyHistoricalSessionClose();
         VerifySessionBoundaries();
         VerifyInvalidCandles();
         VerifyReplay();
@@ -21,6 +23,65 @@ internal sealed class CandleTimeTests
         if (!condition)
         {
             throw new InvalidOperationException(message);
+        }
+    }
+
+    private void VerifyHistoricalSessionClose()
+    {
+        var selection = new AlgoTrading.DataAccess.Calendar.TradingCalendarSelection("NSE", "CM", "test");
+        Assert(selection.SessionBoundsFrom == new DateOnly(2026, 8, 3), "Session bounds default to August 3, 2026.");
+        foreach (int minutes in new[] { 5, 15, 60 })
+        {
+            var timeframe = Stage1Scanner.Core.Market.Timeframe.Minutes(minutes);
+            foreach (var start in new[] { ParseInstant("2024-10-24T15:29:00+05:30"), ParseInstant("2024-10-24T23:28:00+05:30").ToUniversalTime() })
+            {
+                var candle = Stage1Scanner.Core.Market.Candle.Create(start, timeframe, 100, 101, 99, 100, 10);
+                var unrestricted = AlgoTrading.DataAccess.Historical.SqlHistoricalIngestionRepository.WithoutSessionBounds(candle, timeframe);
+                Assert(unrestricted.CloseTime == start.AddMinutes(minutes), "Pre-cutoff historical and polling backfill candles must retain nominal intervals.");
+                var adjusted = AlgoTrading.DataAccess.Historical.SqlHistoricalIngestionRepository.ApplySessionClose(candle, timeframe, new TimeSpan(23, 30, 0));
+                var close = ParseInstant("2024-10-24T23:30:00+05:30");
+                var nominal = start.AddMinutes(minutes);
+                Assert(adjusted.CloseTime == (nominal < close ? nominal : close), "Historical candles must use the configured close instead of 15:30.");
+                Assert(adjusted.OpenTime == candle.OpenTime && adjusted.CloseTime.Offset == start.Offset, "Historical close adjustment must preserve opening identity and offset.");
+            }
+        }
+        var daily = Stage1Scanner.Core.Market.Candle.Create(ParseInstant("2024-10-24T00:00:00+05:30"), Stage1Scanner.Core.Market.Timeframe.Day, 100, 101, 99, 100, 10);
+        Assert(AlgoTrading.DataAccess.Historical.SqlHistoricalIngestionRepository.ApplySessionClose(daily, Stage1Scanner.Core.Market.Timeframe.Day, new TimeSpan(23, 30, 0)).CloseTime == ParseInstant("2024-10-24T23:30:00+05:30"), "Historical daily candles must close at the configured session end.");
+        bool rejected = false;
+        try
+        {
+            AlgoTrading.DataAccess.Historical.SqlHistoricalIngestionRepository.ApplySessionClose(daily with { OpenTime = ParseInstant("2024-10-24T23:31:00+05:30") }, Stage1Scanner.Core.Market.Timeframe.Day, new TimeSpan(23, 30, 0));
+        }
+        catch (InvalidDataException) { rejected = true; }
+        Assert(rejected, "A conflicting historical session close must fail explicitly.");
+    }
+
+    private void VerifyCoreCandleIntervals()
+    {
+        foreach (int minutes in new[] { 5, 15, 60 })
+        {
+            var timeframe = Stage1Scanner.Core.Market.Timeframe.Minutes(minutes);
+            foreach (var start in new[]
+            {
+                ParseInstant("2024-11-01T18:00:00+05:30"),
+                ParseInstant("2024-11-01T18:00:00+05:30").ToUniversalTime(),
+                ParseInstant("2024-11-01T15:30:00+05:30")
+            })
+            {
+                var candle = Stage1Scanner.Core.Market.Candle.Create(start, timeframe, 100, 101, 99, 100, 10);
+                Assert(candle.CloseTime == start.AddMinutes(minutes), "Evening candles must retain their nominal interval.");
+                var series = new Stage1Scanner.Core.Market.Candles(timeframe, new[] { candle });
+                Assert(series.Count == 1, "Special-session candles must pass series validation.");
+            }
+
+            var regularStart = ParseInstant("2024-10-24T15:29:00+05:30");
+            var expectedClose = ParseInstant("2024-10-24T15:30:00+05:30");
+            foreach (var start in new[] { regularStart, regularStart.ToUniversalTime() })
+            {
+                var candle = Stage1Scanner.Core.Market.Candle.Create(start, timeframe, 100, 101, 99, 100, 10);
+                Assert(candle.CloseTime == expectedClose, "Regular final candles must close at 15:30 IST in every offset.");
+                Assert(candle.CloseTime.Offset == start.Offset, "Close time must retain the input offset.");
+            }
         }
     }
 

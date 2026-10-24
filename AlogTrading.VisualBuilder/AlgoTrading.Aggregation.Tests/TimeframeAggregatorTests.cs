@@ -32,11 +32,12 @@ public class TimeframeAggregatorTests
     }
 
     [Fact]
-    public void Aggregate_1m_To_1H_FullSession_Produces6Bars()
+    public void Aggregate_1m_To_1H_FullSession_PreservesFinalPartialBar()
     {
         var b = TestDataFactory.BuildSession(new DateOnly(2024, 1, 1), 1);
         var r = TimeframeAggregator.Aggregate(b, TF(TimeframeUnit.H, 1));
-        Assert.Equal(6, r.Count);
+        Assert.Equal(7, r.Count);
+        Assert.Equal(b.Volume.ToArray().Sum(), r.Volume.ToArray().Sum());
     }
 
     [Fact]
@@ -58,28 +59,30 @@ public class TimeframeAggregatorTests
     [Fact]
     public void Aggregate_6m_To_12m_FullSession_Produces31Bars()
     {
-        // 375 / 12 = 31 complete 12m windows (last partial is dropped).
+        // The fixture supplies 62 six-minute candles: 31 twelve-minute buckets.
         var b = TestDataFactory.BuildSession(new DateOnly(2024, 1, 1), 6);
         var r = TimeframeAggregator.Aggregate(b, TF(TimeframeUnit.m, 12));
         Assert.Equal(31, r.Count);
     }
 
     [Fact]
-    public void Aggregate_6m_To_18m_FullSession_Produces20Bars()
+    public void Aggregate_6m_To_18m_PreservesFinalPartialBar()
     {
-        // 375 / 18 = 20 complete 18m windows.
+        // Preserve all supplied candles, including the final partial bucket.
         var b = TestDataFactory.BuildSession(new DateOnly(2024, 1, 1), 6);
         var r = TimeframeAggregator.Aggregate(b, TF(TimeframeUnit.m, 18));
-        Assert.Equal(20, r.Count);
+        Assert.Equal(21, r.Count);
+        Assert.Equal(b.Volume.ToArray().Sum(), r.Volume.ToArray().Sum());
     }
 
     [Fact]
-    public void Aggregate_6m_To_30m_FullSession_Produces12Bars()
+    public void Aggregate_6m_To_30m_PreservesFinalPartialBar()
     {
-        // 375 / 30 = 12 complete 30m windows.
+        // Preserve all supplied candles, including the final partial bucket.
         var b = TestDataFactory.BuildSession(new DateOnly(2024, 1, 1), 6);
         var r = TimeframeAggregator.Aggregate(b, TF(TimeframeUnit.m, 30));
-        Assert.Equal(12, r.Count);
+        Assert.Equal(13, r.Count);
+        Assert.Equal(b.Volume.ToArray().Sum(), r.Volume.ToArray().Sum());
     }
 
     [Fact]

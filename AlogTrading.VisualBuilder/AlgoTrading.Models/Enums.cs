@@ -8,6 +8,14 @@ public enum GroupLogic { All, Any }
 
 public enum ExecutionMode { Delivery, Intraday }
 
+public enum RiskLossBasis { RealizedOnly, IncludeUnrealized }
+
+public enum RiskPeriod { Daily, Monthly }
+
+public enum RiskAssessmentStatus { NotAssessed, Approved, Rejected }
+
+public enum RiskAssessmentReason { None, InsufficientData, NoClosedTrades, UnsupportedRunMode, LossLimitBreached }
+
 public enum StopLossMode { Percentage, Points, Rule }
 
 public enum TargetMode { Percentage, Points, Rule }

@@ -371,7 +371,6 @@ public partial class MainWindow : Window
             EntryTabControl.Bind(_strategy);
             ProtectionTabControl.Bind(_strategy);
             FullExitTabControl.Bind(_strategy);
-            BacktestTabControl.Bind(_strategy);
         }
         finally { _suppressSlotApply = false; }
 

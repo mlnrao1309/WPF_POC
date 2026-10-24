@@ -42,15 +42,18 @@ internal static class CandleInterval
     {
         var nominal = open + Duration(timeframe);
 
-        // Session close on the same calendar day as the open, in the
-        // open's own offset. Avoids hardcoding IST and works for loaders
-        // that supply +05:30, +00:00, or any other offset.
+        // The regular NSE boundary is an IST wall time, regardless of
+        // the offset used by the loader to represent the opening instant.
+        var marketOpen = open.ToOffset(TimeSpan.FromMinutes(330));
         var sessionClose = new DateTimeOffset(
-            open.Year, open.Month, open.Day,
+            marketOpen.Year, marketOpen.Month, marketOpen.Day,
             SessionClose.Hour, SessionClose.Minute, 0,
-            open.Offset);
+            marketOpen.Offset).ToOffset(open.Offset);
 
-        return nominal < sessionClose ? nominal : sessionClose;
+        // Evening/special sessions cannot use the regular-session cutoff.
+        // Keep the nominal interval; calendar-aware loaders apply the actual
+        // session boundary. Never move a candle's close before its open.
+        return open < sessionClose && nominal > sessionClose ? sessionClose : nominal;
     }
 
     private static TimeSpan Duration(Timeframe timeframe)
