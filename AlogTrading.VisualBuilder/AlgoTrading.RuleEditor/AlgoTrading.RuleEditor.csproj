@@ -18,13 +18,16 @@
     <None Remove="README.md" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="Replay\*" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\Library\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory Condition="'$(Configuration)' != 'Release'">Always</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.89" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="7.1.1" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4258.31" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />

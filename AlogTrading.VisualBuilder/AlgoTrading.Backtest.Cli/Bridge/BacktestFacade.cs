@@ -33,11 +33,12 @@ public sealed class BacktestFacade : IBacktestFacade
 {
     private readonly AppSettings _settings;
     private readonly BacktestRunsDao _runs;
-
+    private readonly BacktestArtifactDao _artifacts;
     public BacktestFacade(AppSettings settings)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _runs = new BacktestRunsDao(settings.Data.Sql.ConnectionString);
+        _artifacts = new BacktestArtifactDao(settings.Data.Sql.ConnectionString);
     }
 
     public FacadeResult Run(FacadeRequest request, CancellationToken cancellationToken)
@@ -84,16 +85,24 @@ public sealed class BacktestFacade : IBacktestFacade
         using var rule = JsonDocument.Parse(request.RuleJson);
         string configuration = JsonSerializer.Serialize(new
         {
-            schemaVersion = 1, rule = rule.RootElement,
-            runMode = request.Mode.ToString(), engineVersion = EngineInfo.Version,
+            schemaVersion = 1,
+            rule = rule.RootElement,
+            runMode = request.Mode.ToString(),
+            engineVersion = EngineInfo.Version,
             initialCapital = request.TradedCapital,
-            lossBasis = request.LossBasis.ToString(), dailyLossLimitPercent = 2m, monthlyLossLimitPercent = 5m,
+            lossBasis = request.LossBasis.ToString(),
+            dailyLossLimitPercent = 2m,
+            monthlyLossLimitPercent = 5m,
             preparedData = prepared.Select(p => new
             {
-                timeframe = p.Key.ToString(), sourceTimeframe = (p.Value as SqlBarSeries)?.AggregatedFrom?.ToString(),
-                candles = p.Value.Count, fromUtc = p.Value.From, toUtc = p.Value.To
+                timeframe = p.Key.ToString(),
+                sourceTimeframe = (p.Value as SqlBarSeries)?.AggregatedFrom?.ToString(),
+                candles = p.Value.Count,
+                fromUtc = p.Value.From,
+                toUtc = p.Value.To
             }),
-            riskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent, quantity = 1,
+            riskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent,
+            quantity = 1,
             costsJson = ReadConfigOrEmpty(_settings.Configs.CostsPath),
             slippageJson = ReadConfigOrEmpty(_settings.Configs.SlippagePath),
             marginsJson = ReadConfigOrEmpty(_settings.Configs.MarginsPath)
@@ -128,11 +137,15 @@ public sealed class BacktestFacade : IBacktestFacade
         IReadOnlyDictionary<Timeframe, IBarSeries> prepared, CancellationToken ct)
     {
         // Preparation has succeeded before the history row is created.
-        var bars = prepared[rule.EvaluationTimeframe];
+        var bars = prepared[rule.BaseTimeframe];
+
+        var signalObservations = new List<SignalObservation>();
+        bool recordSignals = true;
 
         // 4. Engine options.
         var options = new BacktestEngineOptions
         {
+            SignalObserver = observation => { if (recordSignals) signalObservations.Add(observation); },
             InitialCapital = req.TradedCapital,
             LossBasis = req.LossBasis,
             RiskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent,
@@ -150,6 +163,12 @@ public sealed class BacktestFacade : IBacktestFacade
         // 5. Base run on the full series.
         var engine = new BacktestEngine(options);
         var result = engine.Run(rule, bars, ct);
+        recordSignals = false;
+
+        // 7. --- Generate Replay Artifacts ---
+        var replayGen = new ReplayArtifactGenerator();
+        var artifacts = replayGen.Generate(req.RunId, rule, prepared, bars, signalObservations);
+        _artifacts.InsertArtifactsAsync(req.RunId, artifacts).GetAwaiter().GetResult();
 
         // 6. Mode-specific blocks.
         switch (req.Mode)
@@ -166,7 +185,7 @@ public sealed class BacktestFacade : IBacktestFacade
                     new WalkForwardConfig
                     {
                         InSampleRatio = _settings.Backtest.WalkForward.InSampleRatio,
-                        WindowCount   = _settings.Backtest.WalkForward.WindowCount
+                        WindowCount = _settings.Backtest.WalkForward.WindowCount
                     },
                     _settings.Backtest.MaxSweepCombinations, ct);
                 break;
@@ -180,13 +199,16 @@ public sealed class BacktestFacade : IBacktestFacade
         if (req.Mode != RunMode.Single)
             result.RiskAssessment = new RiskAssessment
             {
-                Status = RiskAssessmentStatus.NotAssessed, Reason = RiskAssessmentReason.UnsupportedRunMode,
-                LossBasis = req.LossBasis, TradedCapital = req.TradedCapital,
-                DailyLossLimit = req.TradedCapital * 0.02m, MonthlyLossLimit = req.TradedCapital * 0.05m
+                Status = RiskAssessmentStatus.NotAssessed,
+                Reason = RiskAssessmentReason.UnsupportedRunMode,
+                LossBasis = req.LossBasis,
+                TradedCapital = req.TradedCapital,
+                DailyLossLimit = req.TradedCapital * 0.02m,
+                MonthlyLossLimit = req.TradedCapital * 0.05m
             };
         string resultJson = BacktestResultJson.Serialize(result);
-        string tradesCsv  = BuildTradesCsv(result.Trades);
-        string summary    = BuildSummary(req, result);
+        string tradesCsv = BuildTradesCsv(result.Trades);
+        string summary = BuildSummary(req, result);
         var metricsSummary = SelectMetricsSummary(req.Mode, result);
 
         return FacadeResult.Ok(resultJson, tradesCsv, summary, metricsSummary);
@@ -212,10 +234,10 @@ public sealed class BacktestFacade : IBacktestFacade
 
         return new RunMetricsSummary
         {
-            TotalTrades    = m.TotalTrades,
-            NetPnL         = m.TotalNetPnL,
-            WinRatePct     = m.WinRatePct,
-            Sharpe         = m.Sharpe,
+            TotalTrades = m.TotalTrades,
+            NetPnL = m.TotalNetPnL,
+            WinRatePct = m.WinRatePct,
+            Sharpe = m.Sharpe,
             MaxDrawdownPct = m.MaxDrawdownPct
         };
     }

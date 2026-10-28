@@ -66,7 +66,7 @@ public sealed class TimeframeAccessor
         return map;
     }
 
-    internal static DateTime BarEnd(IBarSeries series, int index)
+    public static DateTime BarEnd(IBarSeries series, int index)
     {
         if (series is SqlBarSeries sql && sql.CloseTime.Length == series.Count)
             return sql.CloseTime.Span[index];

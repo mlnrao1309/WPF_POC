@@ -19,3 +19,7 @@ obj/
 !/AlogTrading.VisualBuilder/Directory.Build.props
 !/AlogTrading.VisualBuilder/AlgoTrading.Data/RecentRuns.sql
 /AlogTrading.VisualBuilder/AlgoTrading.Data/RecentRuns.sql
+!/AlogTrading.VisualBuilder/AlgoTrading.RuleEditor/Replay/index.html
+!/AlogTrading.VisualBuilder/AlgoTrading.RuleEditor/Replay/replay.css
+!/AlogTrading.VisualBuilder/AlgoTrading.RuleEditor/Replay/replay-source.js
+!/AlogTrading.VisualBuilder/AlgoTrading.RuleEditor/Replay/replay-view.js

@@ -184,6 +184,11 @@ public sealed class BacktestEngine
                 bool tpRule = tpRuleGroup is not null
                     && cond.EvaluateGroup(tpRuleGroup, defaultTf, i);
 
+                _options.SignalObserver?.Invoke(new SignalObservation(
+                    DateTime.SpecifyKind(dts[i], DateTimeKind.Utc),
+                    DateTime.SpecifyKind(TimeframeAccessor.BarEnd(baseSeries, i), DateTimeKind.Utc),
+                    eligibility, entry, protection, exit, fullExit, slRule, tpRule));
+
                 // 5. Queue signal-based exits for bar i+1's open.
                 if (position.IsOpen && i + 1 < barCount &&
                     (fullExit || protection || exit || slRule || tpRule))

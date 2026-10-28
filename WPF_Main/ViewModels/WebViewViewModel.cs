@@ -48,6 +48,10 @@ namespace AlgoTrading.ViewModels
         {
             try
             {
+                string body1 = await ReadResponseBodyAsync(args.Response);
+                if (string.IsNullOrEmpty(body1)) return;
+
+                Debug.Write(body1);
                 if (!this.IsProcessWebResourceResponseReceivedEnabled)
                     return;
                 // 1. Filter to only the responses you care about (URL pattern, status code, etc.)

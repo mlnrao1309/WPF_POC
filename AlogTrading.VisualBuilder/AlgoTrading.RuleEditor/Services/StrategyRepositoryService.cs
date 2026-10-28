@@ -35,6 +35,34 @@ public sealed class StrategyRepositoryService
 
     public bool IsAvailable => !string.IsNullOrWhiteSpace(_connectionString);
 
+    public async Task<ReplayRunSnapshot> LoadReplayAsync(Guid runId)
+    {
+        if (!IsAvailable) throw new InvalidOperationException("SQL connection is not configured for replay.");
+        using var connection = new SqlConnection(_connectionString);
+        const string sql = """
+            SELECT r.RunId,
+                   COALESCE(JSON_VALUE(r.ConfigurationJson,'$.rule.strategyName'),'Saved strategy') AS StrategyName,
+                   r.InstrumentId,r.RunStatus,r.ResultUnit,r.ExecutionModel,r.ConfigurationJson,
+                   r.TradesJson,r.EquityJson,r.ErrorMessage,r.StartedAt,r.FinishedAt
+            FROM dbo.StrategyBacktestResult r
+            WHERE r.RunId=@RunId;
+
+            SELECT RunId,ArtifactKind,ArtifactName,PayloadFormat,SchemaVersion,
+                   MetadataJson,PayloadText,RecordCount
+            FROM dbo.StrategyBacktestArtifact
+            WHERE RunId=@RunId AND ArtifactKind IN ('Candles','Indicators','Signals')
+            ORDER BY ArtifactId;
+            """;
+        using var results = await connection.QueryMultipleAsync(sql, new { RunId = runId }).ConfigureAwait(false);
+        var run = await results.ReadSingleOrDefaultAsync<ReplayRunSnapshot>().ConfigureAwait(false)
+            ?? throw new InvalidOperationException("The selected run no longer exists.");
+        if (run.RunId != runId) throw new InvalidOperationException("Replay returned a different run identity.");
+        run.Artifacts = (await results.ReadAsync<ReplayArtifact>().ConfigureAwait(false)).AsList();
+        if (run.Artifacts.Any(a => a.RunId != runId))
+            throw new InvalidOperationException("Replay artifacts belong to a different run.");
+        return run;
+    }
+
     public async Task ValidateBacktestDataAsync(uint instrument, string ruleJson, DateOnly from, DateOnly to)
     {
         if (!IsAvailable) throw new InvalidOperationException("SQL connection is not configured for data preparation.");
@@ -94,4 +122,33 @@ public sealed class StrategyRepositoryService
         public string? LossBasis { get; set; }
         public bool? IsBacktestApproved { get; set; }
     }
+}
+
+public sealed class ReplayRunSnapshot
+{
+    public Guid RunId { get; set; }
+    public string StrategyName { get; set; } = "";
+    public string InstrumentId { get; set; } = "";
+    public string RunStatus { get; set; } = "";
+    public string ResultUnit { get; set; } = "";
+    public string ExecutionModel { get; set; } = "";
+    public string ConfigurationJson { get; set; } = "";
+    public string? TradesJson { get; set; }
+    public string? EquityJson { get; set; }
+    public string? ErrorMessage { get; set; }
+    public DateTimeOffset StartedAt { get; set; }
+    public DateTimeOffset? FinishedAt { get; set; }
+    public IReadOnlyList<ReplayArtifact> Artifacts { get; set; } = Array.Empty<ReplayArtifact>();
+}
+
+public sealed class ReplayArtifact
+{
+    public Guid RunId { get; set; }
+    public string ArtifactKind { get; set; } = "";
+    public string ArtifactName { get; set; } = "";
+    public string PayloadFormat { get; set; } = "";
+    public int SchemaVersion { get; set; }
+    public string? MetadataJson { get; set; }
+    public string PayloadText { get; set; } = "";
+    public long? RecordCount { get; set; }
 }

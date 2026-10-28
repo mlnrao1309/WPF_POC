@@ -18,7 +18,7 @@ public sealed class IndicatorProvider
     private readonly TimeframeAccessor _accessor;
     private readonly Dictionary<string, IndicatorSeries> _cache = new(StringComparer.Ordinal);
 
-    public IndicatorProvider(TimeframeAccessor accessor) { _accessor = accessor; }
+    public IndicatorProvider(TimeframeAccessor accessor) { _accessor = accessor;}
 
     public IndicatorSeries Resolve(IndicatorExpression expr, Timeframe defaultTf)
     {

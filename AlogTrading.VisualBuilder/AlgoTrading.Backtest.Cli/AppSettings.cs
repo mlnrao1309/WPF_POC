@@ -79,7 +79,7 @@ public sealed class DaemonSection
     /// Counted only while both pending/ and running/ are empty.
     /// Clamped at load time to >= 1.
     /// </summary>
-    public int IdleExitSeconds { get; init; } = 30;
+    public int IdleExitSeconds { get; init; } = 120;
 }
 
 public sealed class WalkForwardSection

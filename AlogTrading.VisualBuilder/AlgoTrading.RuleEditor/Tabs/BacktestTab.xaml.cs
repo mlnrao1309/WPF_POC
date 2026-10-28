@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Threading;
 using AlgoTrading.Models;
 using AlgoTrading.RuleEditor.Services;
@@ -29,6 +30,7 @@ public partial class BacktestTab : UserControl
     private bool _suppressChecks;
     private bool _refreshingRuns;
     private bool _queuing;
+    private bool _openingReplay;
     private readonly DispatcherTimer _historyRefresh = new() { Interval = TimeSpan.FromSeconds(3) };
 
     public BacktestTab()
@@ -85,6 +87,35 @@ public partial class BacktestTab : UserControl
         _historyRefresh.Start();
     }
     private void OnHistoryUnloaded(object sender, RoutedEventArgs e) => _historyRefresh.Stop();
+
+    private async void OnRunDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || _runs is null || _openingReplay) return;
+        // Resolve the row under the pointer; headers/empty space must never replay a stale selection.
+        if (e.OriginalSource is not DependencyObject source) return;
+        var row = ItemsControl.ContainerFromElement(RunsGrid, source) as DataGridRow;
+        if (row?.Item is not RunListRow run) return;
+        e.Handled = true;
+        _openingReplay = true;
+        _historyRefresh.Stop();
+        RunHistoryStatus.Text = "Loading saved replay for " + run.RunId + "...";
+        try
+        {
+            var snapshot = await _runs.LoadReplayAsync(run.RunId);
+            new BacktestReplayWindow(snapshot) { Owner = Window.GetWindow(this) }.Show();
+            RunHistoryStatus.Text = "Opened saved replay for " + run.RunId + ".";
+        }
+        catch (Exception ex)
+        {
+            RunHistoryStatus.Text = "Replay could not be opened: " + ex.Message;
+            MessageBox.Show(RunHistoryStatus.Text, "Saved run replay", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        finally
+        {
+            _openingReplay = false;
+            if (IsLoaded) _historyRefresh.Start();
+        }
+    }
 
     private void OnModeCheckChanged(object sender, RoutedEventArgs e)
     {

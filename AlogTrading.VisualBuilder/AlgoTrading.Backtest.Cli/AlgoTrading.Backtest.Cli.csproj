@@ -20,6 +20,7 @@
     <None Remove="AlgoTrading.Backtest.Cli.csproj.bak" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Aggregation\AlgoTrading.Aggregation.csproj" />
     <ProjectReference Include="..\AlgoTrading.Backtest\AlgoTrading.Backtest.csproj" />
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
     <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
@@ -27,6 +28,7 @@
 	<ItemGroup>
 		<None Include="..\Library\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory Condition="'$(Configuration)' != 'Release'">PreserveNewest</CopyToOutputDirectory>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
 	</ItemGroup>
 </Project>

@@ -97,7 +97,8 @@
 
         <DataGrid Grid.Row="2" x:Name="RunsGrid" Margin="12"
                   AutoGenerateColumns="False" IsReadOnly="True"
-                  CanUserAddRows="False" HeadersVisibility="Column">
+                  CanUserAddRows="False" HeadersVisibility="Column"
+                  MouseDoubleClick="OnRunDoubleClick">
             <DataGrid.Columns>
                 <DataGridTextColumn Header="Run At (IST)"
                     Binding="{Binding RunAt, StringFormat=yyyy-MM-dd HH:mm}" Width="160"/>

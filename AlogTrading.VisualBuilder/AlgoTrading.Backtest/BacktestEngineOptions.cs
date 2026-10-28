@@ -5,6 +5,7 @@ namespace AlgoTrading.Backtest;
 
 public sealed class BacktestEngineOptions
 {
+    public Action<AlgoTrading.Backtest.Runtime.SignalObservation>? SignalObserver { get; init; }
     public decimal InitialCapital { get; init; } = 100_000m;
     public RiskLossBasis LossBasis { get; init; } = RiskLossBasis.RealizedOnly;
     public decimal DailyLossLimitPercent { get; init; } = 2m;
