@@ -1,0 +1,23 @@
+:root{color-scheme:light dark;--bg:light-dark(#fafbfc,#15191f);--fg:light-dark(#182230,#e7edf5);--muted:light-dark(#526071,#a9b7c9);--line:light-dark(#d4dce6,#354154);--surface:light-dark(#ffffff,#202833);--long:light-dark(#08785c,#64d9b6);--short:light-dark(#ac4632,#ff9c88);--s1:light-dark(#2563ab,#7fb7ff);--s2:light-dark(#8556ad,#c6a3ed);--s3:light-dark(#a56811,#e6bf70);--s4:light-dark(#087c89,#7adce7);--s5:light-dark(#a1477e,#eba7d0);--error:light-dark(#a83224,#ffb4a5)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,sans-serif}main{padding:clamp(.8rem,2vw,2rem);max-width:100%}h1{font-size:1.5rem;font-weight:500;margin:0}p{margin:.55rem 0}header{display:flex;justify-content:space-between;gap:1rem;align-items:start;flex-wrap:wrap}#run-meta,#inspect,.marker-key{color:var(--muted)}#notice{padding:.65rem .8rem;background:var(--surface);border-left:3px solid var(--s3);overflow-wrap:anywhere}#error{color:var(--error);border-left:3px solid currentColor;padding:.6rem}.controls,.legend{display:flex;gap:.55rem;align-items:center;flex-wrap:wrap;margin:.8rem 0}button,select,.file{font:inherit;color:var(--fg);background:var(--surface);border:1px solid var(--line);padding:.4rem .65rem;border-radius:.3rem}button:disabled,select:disabled{opacity:.45}button:not(:disabled),select,.file{cursor:pointer}.file input{display:block;max-width:100%;margin-top:.3rem}.controls label{display:flex;align-items:center;gap:.4rem;min-width:0}.controls select{max-width:100%}#trade{max-width:23rem}.position{display:grid;gap:.25rem}.position label{display:flex;gap:.7rem}input[type=range]{width:100%;accent-color:var(--s1)}#clock,#inspect,output,td{font-variant-numeric:tabular-nums}#clock{overflow-wrap:anywhere}.legend button{border:0;background:transparent;padding:.25rem;display:flex;align-items:center;gap:.4rem}.legend button[aria-pressed=false]{opacity:.45}.swatch{width:1.3rem;height:.15rem;display:inline-block}#plots{height:clamp(32rem,72dvh,70rem);display:grid;grid-template-rows:minmax(0,3.7fr) minmax(0,1.5fr) minmax(0,1fr);gap:.35rem;min-width:0}.plot{min-height:0;min-width:0;position:relative}canvas{display:block;width:100%;height:100%;touch-action:pan-y}table{border-collapse:collapse;width:100%;table-layout:fixed;margin:1rem 0}caption{text-align:left;font-weight:500;padding:.4rem 0}th,td{padding:.45rem .5rem;border-bottom:1px solid var(--line);text-align:left;overflow-wrap:anywhere;font-weight:400}th{color:var(--muted)}#values td:not(:first-child),#values th:not(:first-child),#events td:nth-last-child(-n+2){text-align:right}#values th:first-child{width:56%}.details{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:1.5rem}#inspect{min-height:1.5em}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:var(--surface);padding:1rem;font:inherit}summary{cursor:pointer}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--s1);outline-offset:2px}@media(max-width:750px){.details{grid-template-columns:minmax(0,1fr);gap:0}.controls label{flex-wrap:wrap}#trade{max-width:16rem}.file{width:100%}#plots{height:34rem}th,td{padding:.4rem .2rem}}@media(pointer:coarse){button,select{min-height:44px}}
+h1{overflow-wrap:anywhere}header>div{min-width:0;max-width:100%}
+
+/* Candle-first replay: overlays never set the price range. */
+main{padding:14px 18px}
+h1{font-size:1.05rem}
+#run-meta{font-size:12px}
+#notice{padding:.35rem .65rem;font-size:12px;margin:.4rem 0}
+.controls{gap:.4rem;margin:.5rem 0;font-size:12px}
+.controls button,.controls select{padding:.3rem .45rem}
+#clock{font-size:13px}
+.indicator-picker{margin:.4rem 0;color:var(--muted);font-size:12px}
+.indicator-picker summary{padding:.25rem 0}
+.legend{max-height:125px;overflow:auto;margin:.35rem 0;gap:.3rem .7rem}
+#plots{height:clamp(430px,66dvh,850px);grid-template-rows:minmax(0,3.2fr) minmax(0,1fr);gap:0;border:1px solid var(--line);background:var(--bg)}
+.plot{border-bottom:1px solid var(--line)}
+.plot.equity{display:none}
+#plots.show-equity{grid-template-rows:minmax(0,3.2fr) minmax(0,1fr) minmax(0,.8fr)}
+#plots.show-equity .equity{display:block}
+:root{--long:#00bd89;--short:#ee5268}
+@media(prefers-color-scheme:dark){:root{--bg:#080e1c;--surface:#121c2c;--line:#263248;--s1:#22c5ef;--s2:#f2ac31;--s3:#c77dff;--s4:#44d5b5;--s5:#e98aba}}
+@media(max-width:750px){main{padding:10px}#plots{height:65dvh;min-height:430px}}
