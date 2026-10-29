@@ -253,27 +253,49 @@ public sealed class ExpressionEditorControl : UserControl
     private UIElement BuildIndicatorUI()
     {
         var row = new WrapPanel { Orientation = Orientation.Horizontal };
+        var descriptor = IndicatorCatalogService.Find(_model.Indicator ?? "Sma");
+        bool isPivot = descriptor?.IsPivot == true;
 
-        row.Children.Add(MakeTimeframeCombo(_model.Timeframe,
-            v => { _model.Timeframe = v; _onChanged(); }));
+        // Belt-and-braces: a pivot indicator must never carry an intraday
+        // timeframe in the editor model. Heals old serialized rows and the
+        // field->indicator kind switch.
+        if (isPivot && _model.Timeframe is not ("D" or "W" or "M"))
+        {
+            _model.Timeframe = "D";
+        }
+
+        // Pivots only accept D/W/M source timeframes; everything else uses the
+        // full intraday+positional map.
+        row.Children.Add(isPivot
+            ? MakePivotTimeframeCombo(_model.Timeframe,
+                  v => { _model.Timeframe = v; _onChanged(); })
+            : MakeTimeframeCombo(_model.Timeframe,
+                  v => { _model.Timeframe = v; _onChanged(); }));
 
         var indCombo = new ComboBox { Width = 140, Margin = new Thickness(0, 0, 0, 0) };
         foreach (var d in IndicatorCatalogService.All) indCombo.Items.Add(d.Kind);
         indCombo.SelectedItem = _model.Indicator ?? "Sma";
         indCombo.SelectionChanged += (s, e) =>
         {
-            if (indCombo.SelectedItem is string v)
+            if (indCombo.SelectedItem is not string v) return;
+            _model.Indicator = v;
+            _model.Params.Clear();
+            var d = IndicatorCatalogService.Find(v);
+            if (d is not null)
+                foreach (var p in d.Parameters)
+                    _model.Params[p.Name] = p.Default;
+
+            _model.Output = null;
+
+            // Force a valid pivot timeframe so we never serialize an invalid pivot.
+            if (d?.IsPivot == true &&
+                _model.Timeframe is not ("D" or "W" or "M"))
             {
-                _model.Indicator = v;
-                _model.Params.Clear();
-                var d = IndicatorCatalogService.Find(v);
-                if (d is not null)
-                    foreach (var p in d.Parameters)
-                        _model.Params[p.Name] = p.Default;
-                _model.Output = null;
-                RebuildSub();
-                _onChanged();
+                _model.Timeframe = "D";
             }
+
+            RebuildSub();
+            _onChanged();
         };
         row.Children.Add(indCombo);
 
@@ -320,9 +342,8 @@ public sealed class ExpressionEditorControl : UserControl
             return row;
         }
 
-        var d2 = IndicatorCatalogService.Find(_model.Indicator ?? "Sma");
-        bool hasSource = d2 is not null
-            && (d2.SourceKind == "Single" || d2.SourceKind == "Optional");
+        bool hasSource = descriptor is not null
+            && (descriptor.SourceKind == "Single" || descriptor.SourceKind == "Optional");
         if (hasSource)
         {
             _model.Source ??= new EditorExpression { Kind = "field", Field = "Close" };
@@ -334,11 +355,11 @@ public sealed class ExpressionEditorControl : UserControl
             _model.Source = null;
         }
 
-        if (d2 is not null && d2.Parameters.Count > 0)
+        if (descriptor is not null && descriptor.Parameters.Count > 0)
         {
-            for (int i = 0; i < d2.Parameters.Count; i++)
+            for (int i = 0; i < descriptor.Parameters.Count; i++)
             {
-                var p = d2.Parameters[i];
+                var p = descriptor.Parameters[i];
                 if (!_model.Params.TryGetValue(p.Name, out var cur)) cur = p.Default;
                 row.Children.Add(new TextBlock
                 {
@@ -380,17 +401,24 @@ public sealed class ExpressionEditorControl : UserControl
             VerticalAlignment = VerticalAlignment.Center
         });
 
-        if (d2 is not null && d2.Outputs.Count > 1)
+        if (descriptor is not null && descriptor.Outputs.Count > 1)
         {
             var outCb = new ComboBox { Width = 90, Margin = new Thickness(4, 0, 0, 0) };
-            foreach (var o in d2.Outputs) outCb.Items.Add(o);
-            outCb.SelectedItem = _model.Output ?? d2.Outputs[0];
+            foreach (var o in descriptor.Outputs) outCb.Items.Add(o);
+            outCb.SelectedItem = _model.Output ?? descriptor.Outputs[0];
             outCb.SelectionChanged += (s, e) =>
             {
                 if (outCb.SelectedItem is string v) { _model.Output = v; _onChanged(); }
             };
             row.Children.Add(outCb);
         }
+
+        // Offset — always shown for non-Count indicators. Pivots interpret it
+        // as periods back; everything else as bars back.
+        row.Children.Add(MakeOffsetBox(
+            _model.Offset,
+            v => { _model.Offset = v; _onChanged(); },
+            isPivot ? "Offset (periods back)" : "Offset (bars back)"));
 
         return row;
     }
@@ -476,6 +504,43 @@ public sealed class ExpressionEditorControl : UserControl
         return cb;
     }
 
+    /// <summary>
+    /// Pivot timeframe picker: Daily / Weekly / Monthly only.
+    /// The editor model stores "D"/"W"/"M" (engine-consistent codes); the
+    /// combo shows the friendly labels used elsewhere in the UI.
+    /// </summary>
+    private static ComboBox MakePivotTimeframeCombo(string? current, Action<string?> onChanged)
+    {
+        var cb = new ComboBox
+        {
+            Width = 80,
+            Margin = new Thickness(0, 0, 3, 0),
+            ToolTip = "Pivot source timeframe (Daily / Weekly / Monthly)"
+        };
+        cb.Items.Add("Daily");
+        cb.Items.Add("Weekly");
+        cb.Items.Add("Monthly");
+
+        cb.SelectedItem = current switch
+        {
+            "W" => "Weekly",
+            "M" => "Monthly",
+            _   => "Daily"     // covers "D" and null
+        };
+
+        cb.SelectionChanged += (s, e) =>
+        {
+            if (cb.SelectedItem is not string v) return;
+            onChanged(v switch
+            {
+                "Weekly"  => "W",
+                "Monthly" => "M",
+                _         => "D"
+            });
+        };
+        return cb;
+    }
+
     private static string LabelFor(string? key)
     {
         if (string.IsNullOrEmpty(key)) return "(inherit)";
@@ -510,14 +575,17 @@ public sealed class ExpressionEditorControl : UserControl
         return cb;
     }
 
-    private static TextBox MakeOffsetBox(int current, Action<int> onChanged)
+    private static TextBox MakeOffsetBox(
+        int current,
+        Action<int> onChanged,
+        string tooltip = "Offset (bars back)")
     {
         var tb = new TextBox
         {
             Width = 32,
             Text = current.ToString(CultureInfo.InvariantCulture),
             VerticalContentAlignment = VerticalAlignment.Center,
-            ToolTip = "Offset (bars back)"
+            ToolTip = tooltip
         };
         tb.LostFocus += (s, e) =>
         {

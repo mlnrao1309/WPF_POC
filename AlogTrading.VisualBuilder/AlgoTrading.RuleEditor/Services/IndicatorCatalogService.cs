@@ -14,6 +14,16 @@ public sealed class IndicatorDescriptorDto
     public string Kind { get; init; } = "";
     public string DisplayName { get; init; } = "";
     public string SourceKind { get; init; } = "Single"; // Single | None | Optional
+
+    /// <summary>
+    /// True for pivot-point indicators. These:
+    ///   * accept only Daily / Weekly / Monthly source timeframes;
+    ///   * have no price source (High/Low/Close come from the pivot candle itself);
+    ///   * serialize to the engine's PivotOperand (Classic) or to
+    ///     IndicatorType.Camarilla with an R1-R4 / S1-S4 component selector.
+    /// </summary>
+    public bool IsPivot { get; init; }
+
     public IReadOnlyList<IndicatorParamInfo> Parameters { get; init; } = Array.Empty<IndicatorParamInfo>();
     public IReadOnlyList<string> Outputs { get; init; } = new[] { "Value" };
 }
@@ -43,6 +53,7 @@ public static class IndicatorCatalogService
             list.Add(new IndicatorDescriptorDto
             {
                 Kind = k, DisplayName = d, SourceKind = src,
+                IsPivot = k is "PivotPointsClassic" or "PivotPointsCamarilla",
                 Outputs = outs, Parameters = ps
             });
         }
@@ -62,18 +73,27 @@ public static class IndicatorCatalogService
             P("period", 20, 1, 1000), P("stdDev", 2.0m, 0.01m, 100m, intOnly: false));
         Add("Atr", "ATR", "None", new[] { "Value" }, P("period", 14, 1, 1000));
         Add("Adx", "ADX", "None", new[] { "Adx", "PlusDi", "MinusDi" }, P("period", 14, 1, 1000));
-        Add("Supertrend", "Supertrend", "None", new[] { "Line", "Direction" },
+        
+        // FIXED: "Line" -> "Value", and added transition states from engine IndicatorComponent
+        Add("Supertrend", "Supertrend", "None", new[] { "Value", "Direction", "TurnedBullish", "TurnedBearish" },
             P("period", 10, 1, 1000), P("multiplier", 3.0m, 0.01m, 100m, intOnly: false));
+            
         Add("Vwap", "VWAP", "None", new[] { "Value" });
         Add("Obv", "OBV", "None", new[] { "Value" });
         Add("Adl", "Accumulation/Distribution", "None", new[] { "Value" });
         Add("Stochastic", "Stochastic", "None", new[] { "K", "D" },
             P("kPeriod", 14, 1, 1000), P("dPeriod", 3, 1, 1000));
         Add("Cci", "CCI", "None", new[] { "Value" }, P("period", 20, 1, 1000));
+
+        // Classic pivots — level list mirrors engine PivotLevel (P, R1-R5, S1-S5).
+        // "PP" is the editor label for PivotLevel.P and is normalized to "P" on serialize.
         Add("PivotPointsClassic", "Pivot Points (Classic)", "None",
-            new[] { "PP", "R1", "R2", "R3", "S1", "S2", "S3" });
+            new[] { "PP", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5" });
+
+        // Camarilla — component list mirrors engine IndicatorComponent (R1-R4, S1-S4).
         Add("PivotPointsCamarilla", "Pivot Points (Camarilla)", "None",
             new[] { "R4", "R3", "R2", "R1", "S1", "S2", "S3", "S4" });
+
         Add("VolumeSma", "Volume SMA", "None", new[] { "Value" }, P("period", 20, 1, 1000));
         Add("Roc", "ROC", "Single", new[] { "Value" }, P("period", 12, 1, 1000));
         Add("Momentum", "Momentum", "Single", new[] { "Value" }, P("period", 10, 1, 1000));

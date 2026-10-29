@@ -163,11 +163,30 @@ public static class ConditionTreeService
             case "parameter":
                 expr.ParameterName = GetString(el, "name");
                 break;
+
             case "indicator":
                 expr.Offset = GetInt(el, "offset", 0);
                 expr.Timeframe = GetString(el, "timeframe");
                 expr.Indicator = GetString(el, "indicator") ?? "Sma";
                 expr.Output = GetString(el, "output");
+
+                // Camarilla is the engine enum name; the editor exposes the
+                // human label. Force a valid D/W/M timeframe too.
+                if (expr.Indicator == "Camarilla")
+                {
+                    expr.Indicator = "PivotPointsCamarilla";
+                    if (expr.Timeframe is not ("D" or "W" or "M"))
+                        expr.Timeframe = "D";
+                }
+
+                // Engine returns PivotLevel.P as "P", UI expects "PP".
+                if (expr.Indicator == "PivotPointsClassic")
+                {
+                    if (expr.Timeframe is not ("D" or "W" or "M"))
+                        expr.Timeframe = "D";
+                    if (expr.Output == "P") expr.Output = "PP";
+                }
+
                 if (expr.Indicator == "Count")
                 {
                     expr.Lookback = GetInt(el, "lookback", 0);
@@ -182,6 +201,7 @@ public static class ConditionTreeService
                         expr.Params[p.Name] = p.Value.ValueKind == JsonValueKind.Number
                             ? p.Value.GetDecimal() : 0m;
                 break;
+
             case "calculation":
                 expr.CalcOp = GetString(el, "op") ?? "Add";
                 if (el.TryGetProperty("left", out var l) && l.ValueKind != JsonValueKind.Null)
@@ -210,55 +230,101 @@ public static class ConditionTreeService
                     ["name"] = expr.ParameterName ?? ""
                 };
             case "indicator":
-            {
-                var obj = new JsonObject
                 {
-                    ["kind"] = "indicator",
-                    ["offset"] = expr.Offset,
-                    ["indicator"] = expr.Indicator ?? "Sma"
-                };
-                if (!string.IsNullOrEmpty(expr.Timeframe)) obj["timeframe"] = expr.Timeframe;
-                if (!string.IsNullOrEmpty(expr.Output)) obj["output"] = expr.Output;
-                if (expr.Source is not null) obj["source"] = ExprToJson(expr.Source);
-                if (expr.Indicator == "Count")
-                {
-                    obj["lookback"] = expr.Lookback;
-                    obj["streak"] = expr.Streak;
-                    if (expr.Predicate is not null) obj["predicate"] = NodeToJson(expr.Predicate);
+                    // Classic pivots → engine expects kind: indicator with IndicatorType.PivotPointsClassic.
+                    // RuleDefinitionJson maps this to PivotOperand internally.
+                    if (expr.Indicator == "PivotPointsClassic")
+                    {
+                        return new JsonObject
+                        {
+                            ["kind"] = "indicator",
+                            ["offset"] = expr.Offset,
+                            ["timeframe"] = expr.Timeframe switch
+                            {
+                                "W" => "W",
+                                "M" => "M",
+                                _ => "D"
+                            },
+                            ["indicator"] = "PivotPointsClassic",
+                            ["output"] = NormalizePivotLevel(expr.Output)
+                        };
+                    }
+
+                    // Camarilla → engine IndicatorType.Camarilla.
+                    var indicatorKind = expr.Indicator == "PivotPointsCamarilla"
+                        ? "Camarilla"
+                        : expr.Indicator ?? "Sma";
+
+                    var obj = new JsonObject
+                    {
+                        ["kind"] = "indicator",
+                        ["offset"] = expr.Offset,
+                        ["indicator"] = indicatorKind
+                    };
+
+                    // Camarilla takes no source and no params.
+                    if (indicatorKind == "Camarilla")
+                    {
+                        obj["output"] = string.IsNullOrEmpty(expr.Output) ? "R1" : expr.Output;
+                        obj["timeframe"] = expr.Timeframe switch
+                        {
+                            "W" => "W",
+                            "M" => "M",
+                            _ => "D"
+                        };
+                        return obj;
+                    }
+
+                    if (!string.IsNullOrEmpty(expr.Timeframe)) obj["timeframe"] = expr.Timeframe;
+                    if (!string.IsNullOrEmpty(expr.Output)) obj["output"] = expr.Output;
+
+                    if (expr.Source is not null) obj["source"] = ExprToJson(expr.Source);
+                    if (indicatorKind == "Count")
+                    {
+                        obj["lookback"] = expr.Lookback;
+                        obj["streak"] = expr.Streak;
+                        if (expr.Predicate is not null) obj["predicate"] = NodeToJson(expr.Predicate);
+                    }
+                    if (expr.Params.Count > 0)
+                    {
+                        var p = new JsonObject();
+                        foreach (var kv in expr.Params) p[kv.Key] = kv.Value;
+                        obj["params"] = p;
+                    }
+                    return obj;
                 }
-                if (expr.Params.Count > 0)
-                {
-                    var p = new JsonObject();
-                    foreach (var kv in expr.Params) p[kv.Key] = kv.Value;
-                    obj["params"] = p;
-                }
-                return obj;
-            }
             case "calculation":
-            {
-                var obj = new JsonObject
                 {
-                    ["kind"] = "calculation",
-                    ["op"] = expr.CalcOp ?? "Add",
-                    ["left"] = expr.CalcLeft is not null ? ExprToJson(expr.CalcLeft)
-                             : new JsonObject { ["kind"] = "number", ["value"] = 0 },
-                    ["right"] = expr.CalcRight is not null ? ExprToJson(expr.CalcRight)
-                             : new JsonObject { ["kind"] = "number", ["value"] = 0 }
-                };
-                return obj;
-            }
+                    var obj = new JsonObject
+                    {
+                        ["kind"] = "calculation",
+                        ["op"] = expr.CalcOp ?? "Add",
+                        ["left"] = expr.CalcLeft is not null ? ExprToJson(expr.CalcLeft)
+                                 : new JsonObject { ["kind"] = "number", ["value"] = 0 },
+                        ["right"] = expr.CalcRight is not null ? ExprToJson(expr.CalcRight)
+                                 : new JsonObject { ["kind"] = "number", ["value"] = 0 }
+                    };
+                    return obj;
+                }
             default: // field
-            {
-                var obj = new JsonObject
                 {
-                    ["kind"] = "field",
-                    ["offset"] = expr.Offset,
-                    ["field"] = expr.Field ?? "Close"
-                };
-                if (!string.IsNullOrEmpty(expr.Timeframe)) obj["timeframe"] = expr.Timeframe;
-                return obj;
-            }
+                    var obj = new JsonObject
+                    {
+                        ["kind"] = "field",
+                        ["offset"] = expr.Offset,
+                        ["field"] = expr.Field ?? "Close"
+                    };
+                    if (!string.IsNullOrEmpty(expr.Timeframe)) obj["timeframe"] = expr.Timeframe;
+                    return obj;
+                }
         }
+    }
+
+    // Editor label "PP" ↔ engine PivotLevel.P.
+    private static string NormalizePivotLevel(string? output)
+    {
+        if (string.IsNullOrEmpty(output) || output == "PP") return "P";
+        return output!;
     }
 
     // ---------- Json helpers ----------

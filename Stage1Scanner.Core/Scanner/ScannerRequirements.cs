@@ -185,9 +185,9 @@ public static class ScannerRequirementAnalyzer
                         "Count requires a positive Lookback."),
 
             AggregateFunction.CountStreak =>
-                AggregateHistory.RequiredStreakEvaluations(
-                    aggregate.Compare,
-                    aggregate.Threshold),
+                Math.Max(
+                    aggregate.Lookback ?? 0,
+                    AggregateHistory.RequiredStreakEvaluations(aggregate.Compare, aggregate.Threshold)),
 
             _ => throw new ArgumentOutOfRangeException()
         };
@@ -253,11 +253,9 @@ public static class ScannerRequirementAnalyzer
 
                 var warmup = IndicatorRequirements.GetMinimumBars(
                     indicator.Spec);
-                if (indicator.Spec.Kind == IndicatorType.Camarilla
-                    && !PivotResolver.IsTraditionalPivotTimeframe(timeframe))
-                    throw new InvalidOperationException("Camarilla requires a completed 1D, 1W or 1M source timeframe.");
-
-                Register(
+                    if (indicator.Spec.Kind == IndicatorType.Camarilla && indicator.Spec.Input is not null)
+                        throw new InvalidOperationException("Camarilla does not accept an input operand.");
+                    Register(
                     requirements,
                     timeframe,
                     indicator.Offset,
