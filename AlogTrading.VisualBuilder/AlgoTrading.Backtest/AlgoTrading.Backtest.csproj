@@ -14,6 +14,12 @@
   <PropertyGroup Condition="'$(Configuration)'=='Release'">
     <OutDir>$(MSBuildThisFileDirectory)..\Library\</OutDir>
   </PropertyGroup>
+  <ItemGroup>
+    <None Remove="AlgoTrading.Backtest.csproj.bak" />
+    <None Remove="BacktestEngineOptions.cs.backup-20261004-161215" />
+    <None Remove="Runtime\BacktestEngine.cs.backup-20261004-161215" />
+    <None Remove="Runtime\IndicatorProvider.cs.backup-20261004-161215" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />

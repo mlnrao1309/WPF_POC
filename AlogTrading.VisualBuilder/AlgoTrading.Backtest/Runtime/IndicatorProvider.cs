@@ -102,7 +102,7 @@ public sealed partial class IndicatorProvider
 
         var kind = expr.Indicator;
         if (kind is IndicatorKind.PivotPointsClassic or IndicatorKind.PivotPointsCamarilla)
-            return ComputeDailyPivots(kind, aligned);
+            return ComputePivots(kind, aligned);
 
         var bars = ToCandles(aligned, tf);
         decimal P(string name, decimal fallback) => expr.Params is not null && expr.Params.TryGetValue(name, out var value) ? value : fallback;
@@ -148,8 +148,11 @@ public sealed partial class IndicatorProvider
                 return Result(["Adx", "PlusDi", "MinusDi"], adx.Adx.Values, adx.PlusDi.Values, adx.MinusDi.Values);
             case IndicatorKind.Supertrend:
                 var st = bars.SuperTrend(Period(10), P("multiplier", 3));
-                return Result(["Line", "Direction"], st.Value.Values,
-                    st.Direction.Select(value => value.HasValue ? (decimal?)(int)value.Value : null).ToArray());
+                return Result(["Value", "Direction", "TurnedBullish", "TurnedBearish"], 
+                    st.Value.Values,
+                    st.Direction.Select(value => value.HasValue ? (decimal?)(int)value.Value : null).ToArray(),
+                    st.TurnedBullish.Select(b => (decimal?)(b ? 1m : 0m)).ToArray(),
+                    st.TurnedBearish.Select(b => (decimal?)(b ? 1m : 0m)).ToArray());
             case IndicatorKind.Vwap: return Single(bars.VWAP());
             case IndicatorKind.Obv: return Single(bars.OBV());
             case IndicatorKind.Adl: return Single(bars.ADL());
@@ -209,77 +212,47 @@ public sealed partial class IndicatorProvider
         return new IndicatorSeries { OutputNames = names, Outputs = outputs, FirstValidIndex = firstValid };
     }
 
-    private IndicatorSeries ComputeDailyPivots(IndicatorKind kind, AlignedSeries target)
+    private IndicatorSeries ComputePivots(IndicatorKind kind, AlignedSeries target)
     {
-        var daily = _accessor.Resolve(Timeframe.Parse("D"));
-        int dailyCount = daily.TfBarCount;
-        var bars = ToCandles(daily, Timeframe.Parse("D"));
+        // Use the target's requested timeframe (D, W, or M) instead of hardcoding "D".
+        var tf = target.Timeframe;
+        var bars = ToCandles(target, tf);
+        
         string[] names;
-        decimal?[][] dailyOutputs;
+        decimal?[][] outputs;
+        
         if (kind == IndicatorKind.PivotPointsCamarilla)
         {
             var cam = bars.Camarilla();
             names = ["R4", "R3", "R2", "R1", "S1", "S2", "S3", "S4"];
-            dailyOutputs = [cam.R4.Values, cam.R3.Values, cam.R2.Values, cam.R1.Values,
+            outputs = [cam.R4.Values, cam.R3.Values, cam.R2.Values, cam.R1.Values,
                 cam.S1.Values, cam.S2.Values, cam.S3.Values, cam.S4.Values];
         }
         else
         {
-            names = ["PP", "R1", "R2", "R3", "S1", "S2", "S3"];
-            dailyOutputs = names.Select(_ => new decimal?[dailyCount]).ToArray();
-            for (int i = 1; i < dailyCount; i++)
+            // Output "P" instead of "PP" to match Stage1Scanner.Core.PivotLevel and the UI.
+            // Include R4, R5, S4, S5.
+            names = ["P", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5"];
+            outputs = names.Select(_ => new decimal?[bars.Count]).ToArray();
+            for (int i = 1; i < bars.Count; i++)
             {
                 var previous = bars[i - 1];
                 var p = PivotHelpers.Traditional(previous.High, previous.Low, previous.Close);
-                decimal[] values = [p.P, p.R1, p.R2, p.R3, p.S1, p.S2, p.S3];
-                for (int k = 0; k < names.Length; k++) dailyOutputs[k][i] = values[k];
+                decimal[] values = [p.P, p.R1, p.R2, p.R3, p.R4, p.R5, p.S1, p.S2, p.S3, p.S4, p.S5];
+                for (int k = 0; k < names.Length; k++) outputs[k][i] = values[k];
             }
         }
-        int actualOutputCount = names.Length;
-        int targetCount = target.TfBarCount;
-        var projected = new decimal?[actualOutputCount][];
-        for (int k = 0; k < actualOutputCount; k++)
-            projected[k] = new decimal?[targetCount];
-
-        var dailyDates = daily.Bars.DateTime.Span;
-        var targetDates = target.Bars.DateTime.Span;
-        int dailyIndex = 0;
-        int firstValid = targetCount;
-
-        for (int i = 0; i < targetCount; i++)
-        {
-            int targetDay = TradingDayKey(targetDates[i]);
-            while (dailyIndex < dailyCount &&
-                   TradingDayKey(dailyDates[dailyIndex]) < targetDay)
-            {
-                dailyIndex++;
-            }
-
-            if (dailyIndex >= dailyCount ||
-                TradingDayKey(dailyDates[dailyIndex]) != targetDay)
-            {
-                continue;
-            }
-
-            for (int k = 0; k < actualOutputCount; k++)
-                projected[k][i] = dailyOutputs[k][dailyIndex];
-
-            if (firstValid == targetCount && projected[0][i].HasValue)
-                firstValid = i;
-        }
-
+        
+        int firstValid = bars.Count;
+        for (int i = 0; i < firstValid; i++)
+            if (outputs[0][i].HasValue) { firstValid = i; break; }
+            
         return new IndicatorSeries
         {
             OutputNames = names,
-            Outputs = projected,
+            Outputs = outputs,
             FirstValidIndex = firstValid
         };
-    }
-
-    private static int TradingDayKey(DateTime utc)
-    {
-        if (utc.TimeOfDay < new TimeSpan(3, 45, 0)) utc = utc.AddDays(-1);
-        return utc.Year * 10000 + utc.Month * 100 + utc.Day;
     }
 
     private decimal?[] BuildSourceSeries(ValueExpression? src, Timeframe tf,
