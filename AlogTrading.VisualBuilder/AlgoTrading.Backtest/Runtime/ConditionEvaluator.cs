@@ -57,8 +57,12 @@ public sealed class ConditionEvaluator
     }
 
     public bool EvaluateCondition(Condition cond, Timeframe defaultTf, int baseIndex)
+        => TryEvaluateCondition(cond, defaultTf, baseIndex, out var match) && match;
+
+    public bool TryEvaluateCondition(Condition cond, Timeframe defaultTf, int baseIndex, out bool match)
     {
-        if (!cond.Enabled) return false;
+        match = false;
+        if (!cond.Enabled) return true;
         var op = cond.Operator;
 
         if (op is Operator.CrossedAbove or Operator.CrossedBelow)
@@ -68,15 +72,16 @@ public sealed class ConditionEvaluator
             if (!_expr.TryEvaluate(cond.Left, defaultTf, baseIndex, 1, out var lp)) return false;
             if (!_expr.TryEvaluate(cond.Right, defaultTf, baseIndex, 1, out var rp)) return false;
 
-            return op == Operator.CrossedAbove
+            match = op == Operator.CrossedAbove
                 ? ln > rn && lp <= rp
                 : ln < rn && lp >= rp;
+            return true;
         }
 
         if (!_expr.TryEvaluate(cond.Left, defaultTf, baseIndex, 0, out var l)) return false;
         if (!_expr.TryEvaluate(cond.Right, defaultTf, baseIndex, 0, out var r)) return false;
 
-        return op switch
+        match = op switch
         {
             Operator.GreaterThan    => l > r,
             Operator.LessThan       => l < r,
@@ -92,5 +97,6 @@ public sealed class ConditionEvaluator
             Operator.ClosedBelow    => l < r,
             _ => false
         };
+        return Enum.IsDefined(op);
     }
 }

@@ -61,9 +61,8 @@ public sealed class BacktestEngine
 
         var cache = new TimeframeCache(baseSeries, _options.DailySeries, _options.PreparedSeries);
         var accessor = new TimeframeAccessor(baseSeries.InstrumentToken, baseSeries, cache);
-        var indicators = new IndicatorProvider(accessor);
-
         var parameters = BuildParameters(rule);
+        var indicators = new IndicatorProvider(accessor, parameters);
         var expr = new ExpressionEvaluator(accessor, indicators, parameters);
         var cond = new ConditionEvaluator(expr);
 

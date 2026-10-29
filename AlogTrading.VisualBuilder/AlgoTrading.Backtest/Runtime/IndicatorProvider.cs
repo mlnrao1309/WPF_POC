@@ -13,12 +13,17 @@ namespace AlgoTrading.Backtest.Runtime;
 /// (token, tf, kind, output, params, source) per Section 4.11. Sources must
 /// share the parent indicator's timeframe in v1.
 /// </summary>
-public sealed class IndicatorProvider
+public sealed partial class IndicatorProvider
 {
     private readonly TimeframeAccessor _accessor;
     private readonly Dictionary<string, IndicatorSeries> _cache = new(StringComparer.Ordinal);
 
-    public IndicatorProvider(TimeframeAccessor accessor) { _accessor = accessor;}
+    private readonly IReadOnlyDictionary<string, decimal> _parameters;
+    public IndicatorProvider(TimeframeAccessor accessor, IReadOnlyDictionary<string, decimal>? parameters = null)
+    {
+        _accessor = accessor;
+        _parameters = parameters ?? new Dictionary<string, decimal>();
+    }
 
     public IndicatorSeries Resolve(IndicatorExpression expr, Timeframe defaultTf)
     {
@@ -41,6 +46,8 @@ public sealed class IndicatorProvider
           .Append('|').Append(expr.Output ?? "")
           .Append('|').Append(ParamsKey(expr.Params))
           .Append('|').Append(SourceKey(expr.Source, tf));
+        if (expr.Indicator == IndicatorKind.Count || expr.Source is not null)
+            sb.Append('|').Append(System.Text.Json.JsonSerializer.Serialize(expr));
         return sb.ToString();
     }
 
@@ -89,6 +96,7 @@ public sealed class IndicatorProvider
 
     private IndicatorSeries Compute(IndicatorExpression expr, Timeframe tf, Timeframe defaultTf)
     {
+        if (expr.Indicator == IndicatorKind.Count) return ComputeCount(expr, tf);
         var aligned = _accessor.Resolve(tf);
         int tfCount = aligned.TfBarCount;
 

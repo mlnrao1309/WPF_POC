@@ -272,6 +272,36 @@ public sealed class RuleSet : IRuleExpression
 
 public sealed class AggregateRule : IRuleExpression
 {
+    /// <summary>
+    /// Creates a count rule, or a consecutive-streak rule when streak is true.
+    /// Both modes count within a positive lookback window of closed candles.
+    /// Streak mode counts backward from the latest candle until the first false.
+    /// </summary>
+    public static AggregateRule Count(
+        IRuleExpression expression,
+        Timeframe? timeframe,
+        ComparisonOperator compare,
+        int threshold,
+        int lookback,
+        bool streak = false)
+    {
+        if (lookback <= 0)
+            throw new ArgumentOutOfRangeException(nameof(lookback), "Lookback must be positive.");
+
+        return new(
+            streak ? AggregateFunction.CountStreak : AggregateFunction.Count,
+            expression,
+            timeframe,
+            compare,
+            threshold,
+            lookback)
+        {
+            UsesLookbackForStreak = streak
+        };
+    }
+
+    internal bool UsesLookbackForStreak { get; private init; }
+
     public AggregateRule(
         AggregateFunction function,
         IRuleExpression expression,
@@ -399,7 +429,9 @@ public sealed class AggregateRule : IRuleExpression
         }
 
         var evaluationsRequired =
-            AggregateHistory.RequiredStreakEvaluations(
+            UsesLookbackForStreak
+                ? Lookback!.Value
+                : AggregateHistory.RequiredStreakEvaluations(
                 Compare,
                 Threshold);
 

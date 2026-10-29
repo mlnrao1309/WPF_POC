@@ -71,10 +71,10 @@ public static class ConditionTreeService
 
     // ---------- Node ----------
 
-    private static EditorNode? NodeFromJson(JsonElement el)
+    private static EditorNode? NodeFromJson(JsonElement el, string defaultKind = "group")
     {
         if (el.ValueKind != JsonValueKind.Object) return null;
-        var kind = GetString(el, "kind") ?? "group";
+        var kind = GetString(el, "kind") ?? defaultKind;
 
         if (kind == "group")
         {
@@ -168,6 +168,13 @@ public static class ConditionTreeService
                 expr.Timeframe = GetString(el, "timeframe");
                 expr.Indicator = GetString(el, "indicator") ?? "Sma";
                 expr.Output = GetString(el, "output");
+                if (expr.Indicator == "Count")
+                {
+                    expr.Lookback = GetInt(el, "lookback", 0);
+                    expr.Streak = GetBool(el, "streak", false);
+                    if (el.TryGetProperty("predicate", out var predicate))
+                        expr.Predicate = NodeFromJson(predicate, "condition");
+                }
                 if (el.TryGetProperty("source", out var src) && src.ValueKind != JsonValueKind.Null)
                     expr.Source = ExprFromJson(src);
                 if (el.TryGetProperty("params", out var prm) && prm.ValueKind == JsonValueKind.Object)
@@ -213,6 +220,12 @@ public static class ConditionTreeService
                 if (!string.IsNullOrEmpty(expr.Timeframe)) obj["timeframe"] = expr.Timeframe;
                 if (!string.IsNullOrEmpty(expr.Output)) obj["output"] = expr.Output;
                 if (expr.Source is not null) obj["source"] = ExprToJson(expr.Source);
+                if (expr.Indicator == "Count")
+                {
+                    obj["lookback"] = expr.Lookback;
+                    obj["streak"] = expr.Streak;
+                    if (expr.Predicate is not null) obj["predicate"] = NodeToJson(expr.Predicate);
+                }
                 if (expr.Params.Count > 0)
                 {
                     var p = new JsonObject();

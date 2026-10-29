@@ -285,6 +285,41 @@ public sealed class ExpressionEditorControl : UserControl
             VerticalAlignment = VerticalAlignment.Center
         });
 
+        if (_model.Indicator == "Count")
+        {
+            _model.Source = null;
+            _model.Predicate ??= new EditorNode
+            {
+                Kind = "condition",
+                Left = new EditorExpression { Kind = "field", Field = "Close" },
+                Operator = "GreaterThan",
+                Right = new EditorExpression { Kind = "field", Field = "Open" }
+            };
+            var predicate = _model.Predicate;
+            row.Children.Add(new ExpressionEditorControl(predicate.Left, _depth + 1, _parameterNamesProvider, _onChanged));
+            var op = new ComboBox { Width = 130, Margin = new Thickness(4, 0, 4, 0) };
+            foreach (var name in Enum.GetNames<AlgoTrading.Models.Operator>()) op.Items.Add(name);
+            op.SelectedItem = predicate.Operator;
+            op.SelectionChanged += (_, _) => { if (op.SelectedItem is string v) { predicate.Operator = v; _onChanged(); } };
+            row.Children.Add(op);
+            row.Children.Add(new ExpressionEditorControl(predicate.Right, _depth + 1, _parameterNamesProvider, _onChanged));
+            row.Children.Add(new TextBlock { Text = ", lookback:", Margin = new Thickness(4, 3, 2, 0) });
+            var lookback = new TextBox { Width = 55, Text = _model.Lookback.ToString(CultureInfo.InvariantCulture), ToolTip = "Positive number of closed candles" };
+            lookback.LostFocus += (_, _) =>
+            {
+                if (int.TryParse(lookback.Text, out var n) && n > 0) { _model.Lookback = n; _onChanged(); }
+                else lookback.Text = _model.Lookback.ToString(CultureInfo.InvariantCulture);
+            };
+            row.Children.Add(lookback);
+            var streak = new CheckBox { Content = "Streak", IsChecked = _model.Streak, Margin = new Thickness(6, 3, 4, 0), ToolTip = "Count backward from the latest closed candle until the first false or lookback boundary" };
+            streak.Checked += (_, _) => { _model.Streak = true; _onChanged(); };
+            streak.Unchecked += (_, _) => { _model.Streak = false; _onChanged(); };
+            row.Children.Add(streak);
+            row.Children.Add(new TextBlock { Text = ")" });
+            row.Children.Add(MakeOffsetBox(_model.Offset, v => { _model.Offset = v; _onChanged(); }));
+            return row;
+        }
+
         var d2 = IndicatorCatalogService.Find(_model.Indicator ?? "Sma");
         bool hasSource = d2 is not null
             && (d2.SourceKind == "Single" || d2.SourceKind == "Optional");

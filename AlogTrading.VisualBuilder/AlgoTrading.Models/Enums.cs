@@ -61,5 +61,5 @@ public enum IndicatorKind
     Stochastic, Cci,
     PivotPointsClassic, PivotPointsCamarilla,
     VolumeSma, Roc, Momentum, Trix,
-    KeltnerChannel, DonchianChannel, Mfi, HighLow52W
+    KeltnerChannel, DonchianChannel, Mfi, HighLow52W, Count
 }

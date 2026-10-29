@@ -27,6 +27,9 @@ public sealed class TimeframeAccessor
         _cache = cache;
     }
 
+    internal TimeframeAccessor ForTimeframe(Timeframe tf)
+        => new(_token, Resolve(tf).Bars, _cache);
+
     public AlignedSeries Resolve(Timeframe tf)
     {
         if (_resolved.TryGetValue(tf, out var cached)) return cached;

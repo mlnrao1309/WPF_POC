@@ -32,6 +32,12 @@ public sealed class IndicatorExpression : ValueExpression
     public string? Output { get; set; }
     public ValueExpression? Source { get; set; }
     public Dictionary<string, decimal>? Params { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Condition? Predicate { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public int Lookback { get; set; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Streak { get; set; }
 }
 
 public sealed class ParameterExpression : ValueExpression

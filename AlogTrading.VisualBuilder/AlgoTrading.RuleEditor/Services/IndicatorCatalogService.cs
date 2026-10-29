@@ -88,6 +88,7 @@ public static class IndicatorCatalogService
         Add("HighLow52W", "52-Week High/Low", "None", new[] { "High52", "Low52" },
             P("period", 250, 1, 5000));
 
+        Add("Count", "Count", "None", new[] { "Value" });
         return list;
     }
 }

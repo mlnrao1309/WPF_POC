@@ -276,6 +276,29 @@ public static class RuleDefinitionValidator
                 // RULE_016
                 if (ind.Offset < 0)
                     errs.Add(new("RULE_016", "offset must be >= 0.", path + ".offset"));
+                if (ind.Indicator == IndicatorKind.Count)
+                {
+                    if (ind.Lookback <= 0)
+                        errs.Add(new("RULE_COUNT_LOOKBACK", "Count lookback must be positive.", path + ".lookback"));
+                    if (ind.Source is not null || ind.Params is { Count: > 0 } || ind.Output is not (null or "Value"))
+                        errs.Add(new("RULE_COUNT_OPTIONS", "Count uses predicate, lookback, streak and output Value.", path));
+                    if (ind.Predicate is null || !ind.Predicate.Enabled || ind.Predicate.Left is null || ind.Predicate.Right is null)
+                        errs.Add(new("RULE_COUNT_PREDICATE", "Count requires an enabled condition.", path + ".predicate"));
+                    else
+                    {
+                        ValidateExpr(ind.Predicate.Left, path + ".predicate.left", depth + 1, errs, warn, skip, paramNames, lookup, rule);
+                        ValidateExpr(ind.Predicate.Right, path + ".predicate.right", depth + 1, errs, warn, skip, paramNames, lookup, rule);
+                        if (!Enum.IsDefined(ind.Predicate.Operator))
+                            errs.Add(new("RULE_COUNT_OPERATOR", "Invalid Count condition operator.", path + ".predicate.operator"));
+                        var op = ind.Predicate.Operator;
+                        if (op is Operator.OpenedAbove or Operator.OpenedBelow or Operator.ClosedAbove or Operator.ClosedBelow)
+                        {
+                            var field = op is Operator.OpenedAbove or Operator.OpenedBelow ? Field.Open : Field.Close;
+                            if (ind.Predicate.Left is not FieldExpression f || f.Field != field)
+                                errs.Add(new("RULE_031", "Count Opened/Closed condition requires the matching left field.", path + ".predicate.left"));
+                        }
+                    }
+                }
                 // RULE_032 â€” declared outputs are checked in T5 via descriptor. T1 makes no assertion.
                 if (ind.Source is not null)
                     ValidateExpr(ind.Source, path + ".source", depth + 1, errs, warn, skip, paramNames, lookup, rule);

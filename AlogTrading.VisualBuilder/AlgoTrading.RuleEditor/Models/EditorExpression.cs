@@ -28,6 +28,11 @@ public sealed class EditorExpression
     public EditorExpression? Source { get; set; }
     public Dictionary<string, decimal> Params { get; set; } = new();
 
+    // Count indicator
+    public EditorNode? Predicate { get; set; }
+    public int Lookback { get; set; } = 5;
+    public bool Streak { get; set; }
+
     // calculation
     public string? CalcOp { get; set; }
     public EditorExpression? CalcLeft { get; set; }
