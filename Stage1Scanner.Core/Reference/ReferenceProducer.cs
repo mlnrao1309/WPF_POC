@@ -3,89 +3,75 @@ using Stage1Scanner.Core.Rules;
 
 namespace Stage1Scanner.Core.ScannerModel;
 
-/// <summary>
-/// Declares a stateful reference. When Trigger first evaluates True on a
-/// closed bar of Timeframe, that bar's OHLC is captured and exposed via
-/// ReferenceOperand. Persists until ClearOn fires True (if provided),
-/// at which point it can be re-armed on a subsequent Trigger.
-/// </summary>
+public sealed record ReferenceCaptureDef(string Id, Operand Value);
+
 public sealed class ReferenceProducer
 {
     public ReferenceProducer(
         string id,
+        string blockName,
         IRuleExpression trigger,
         Timeframe timeframe,
+        IReadOnlyList<ReferenceCaptureDef> captures, // <-- NEW
         IRuleExpression? clearOn = null)
     {
-        if (string.IsNullOrWhiteSpace(id))
-        {
-            throw new ArgumentException(
-                "Reference id is required.", nameof(id));
-        }
-
-        Id = id;
+        //Id = id ?? throw new ArgumentNullException(nameof(id));
+        BlockName = blockName;
         Trigger = trigger ?? throw new ArgumentNullException(nameof(trigger));
         Timeframe = timeframe;
+        Captures = captures ?? new List<ReferenceCaptureDef>();
         ClearOn = clearOn;
     }
+    //public string Id { get; }
 
-    public string Id { get; }
+    public string BlockName { get; }
     public IRuleExpression Trigger { get; }
     public Timeframe Timeframe { get; }
+    public IReadOnlyList<ReferenceCaptureDef> Captures { get; }
     public IRuleExpression? ClearOn { get; }
 
-    /// <summary>
-    /// Called once per instrument per Scanner run, before RuleSets evaluate.
-    /// </summary>
     public void Prepare(Instruments instruments, EvaluationContext context)
     {
-        var exists = instruments.References.TryGet(Id, out _);
+        // Check if any of the captures currently exist
+        var anyExists = Captures.Any(c => instruments.References.TryGet(c.Id, out _));
 
-        if (exists)
+        if (anyExists)
         {
-            if (ClearOn is null)
-            {
-                return;
-            }
+            if (ClearOn is null) return;
 
             var clear = ClearOn.Evaluate(context);
-            if (clear.Truth != RuleTruth.True)
-            {
-                return;
-            }
+            if (clear.Truth != RuleTruth.True) return;
 
-            instruments.References.Clear(Id);
-            // Fall through: allows re-capture on this same bar if Trigger fires.
+            foreach (var c in Captures) instruments.References.Clear(c.Id);
+            // Fall through to re-capture
         }
 
         var trigger = Trigger.Evaluate(context);
-        if (trigger.Truth != RuleTruth.True)
-        {
-            return;
-        }
+        if (trigger.Truth != RuleTruth.True) return;
 
-        if (!instruments.TryGetCandles(Timeframe, out var candles))
-        {
-            return;
-        }
+        if (!instruments.TryGetCandles(Timeframe, out var candles)) return;
 
         var idx = context.ResolveClosedIndex(Timeframe, context.EvaluationTime);
-        if (idx < 0)
-        {
-            return;
-        }
+        if (idx < 0) return;
 
         var bar = candles[idx];
 
-        instruments.References.Set(new Reference(
-            Id,
-            Timeframe,
-            bar.OpenTime,
-            bar.CloseTime,
-            bar.Open,
-            bar.High,
-            bar.Low,
-            bar.Close,
-            context.EvaluationTime));
+        foreach (var capture in Captures)
+        {
+            var valResult = capture.Value.Resolve(context);
+            decimal? capturedValue = valResult.HasValue ? valResult.Value : null;
+
+            instruments.References.Set(new Reference(
+                capture.Id, // <-- The specific variable name
+                Timeframe,
+                bar.OpenTime,
+                bar.CloseTime,
+                bar.Open,
+                bar.High,
+                bar.Low,
+                bar.Close,
+                capturedValue,
+                context.EvaluationTime));
+        }
     }
 }

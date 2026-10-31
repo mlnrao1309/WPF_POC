@@ -9,6 +9,8 @@ namespace AlgoTrading.Models;
     WriteIndented = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(RuleDefinition))]
+[JsonSerializable(typeof(ReferenceBlock))]
+[JsonSerializable(typeof(ReferenceCapture))] // <-- THIS WAS MISSING
 [JsonSerializable(typeof(ConditionGroup))]
 [JsonSerializable(typeof(Condition))]
 [JsonSerializable(typeof(ValueExpression))]
@@ -17,6 +19,7 @@ namespace AlgoTrading.Models;
 [JsonSerializable(typeof(IndicatorExpression))]
 [JsonSerializable(typeof(ParameterExpression))]
 [JsonSerializable(typeof(CalculationExpression))]
+[JsonSerializable(typeof(ReferenceExpression))]
 [JsonSerializable(typeof(ParameterSpec))]
 [JsonSerializable(typeof(StopLossSpec))]
 [JsonSerializable(typeof(TargetSpec))]

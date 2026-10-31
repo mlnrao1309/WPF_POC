@@ -10,10 +10,14 @@ public sealed partial class IndicatorProvider
     {
         if (expr.Lookback <= 0 || expr.Predicate is null || !expr.Predicate.Enabled || expr.Predicate.Left is null || expr.Predicate.Right is null)
             throw new ArgumentException("Count requires a positive lookback and an enabled predicate.");
+            
         var aligned = _accessor.Resolve(tf);
         var candles = ToCandles(aligned, tf);
-        var expressions = new ExpressionEvaluator(_accessor.ForTimeframe(tf), this, _parameters);
+        
+        // Note: _references is now IReadOnlyDictionary<string, ReferenceValue>
+        var expressions = new ExpressionEvaluator(_accessor.ForTimeframe(tf), this, _parameters, _references);
         var conditions = new ConditionEvaluator(expressions);
+        
         var truth = new Dictionary<DateTimeOffset, Rules.RuleTruth>();
         for (int i = 0; i < candles.Count; i++)
         {
@@ -21,14 +25,14 @@ public sealed partial class IndicatorProvider
                 ? match ? Rules.RuleTruth.True : Rules.RuleTruth.False
                 : Rules.RuleTruth.Unknown;
         }
+        
         var instrument = new Core.Instruments(_accessor.BaseSeries.InstrumentToken, _accessor.BaseSeries.Symbol);
         var rule = Rules.AggregateRule.Count(new CountPredicate(truth), candles.Timeframe,
             Rules.ComparisonOperator.GreaterOrEqual, 0, expr.Lookback, expr.Streak);
+            
         var values = new decimal?[candles.Count];
         for (int i = expr.Lookback - 1; i < candles.Count; i++)
         {
-            // Keep core evaluation on the requested window, avoiding a scan of
-            // the full future dataset for every historical evaluation time.
             instrument.SetCandles(candles.Timeframe,
                 Enumerable.Range(i - expr.Lookback + 1, expr.Lookback).Select(j => candles[j]));
             var result = rule.Evaluate(new Rules.EvaluationContext(instrument, candles[i].CloseTime));

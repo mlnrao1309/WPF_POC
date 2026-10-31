@@ -53,11 +53,16 @@ public partial class ConditionTab : UserControl
     private void RebuildGroupUI()
     {
         if (_root is null) { GroupHost.Content = null; return; }
+
         var ctrl = new ConditionGroupControl(
-            _root, 0, isRoot: true,
-            ParameterNamesProvider,
-            RaiseChanged,
+            model: _root,
+            depth: 0,
+            isRoot: true,
+            parameterNamesProvider: ParameterNamesProvider,
+            referenceNamesProvider: ReferenceNamesProvider,
+            onChanged: RaiseChanged,
             onDelete: null);
+
         GroupHost.Content = ctrl;
     }
 
@@ -65,6 +70,12 @@ public partial class ConditionTab : UserControl
     {
         if (_owner is null) return Array.Empty<string>();
         return _owner.CurrentParameterNames();
+    }
+
+    private IReadOnlyList<string> ReferenceNamesProvider()
+    {
+        if (_owner is null) return Array.Empty<string>();
+        return _owner.CurrentReferenceNames();
     }
 
     private void RaiseChanged()

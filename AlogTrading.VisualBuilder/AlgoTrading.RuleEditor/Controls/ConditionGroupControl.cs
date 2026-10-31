@@ -5,9 +5,6 @@ using AlgoTrading.RuleEditor.Models;
 
 namespace AlgoTrading.RuleEditor.Controls;
 
-/// <summary>
-/// Recursive group editor. Root groups have no delete button; nested groups do.
-/// </summary>
 public sealed class ConditionGroupControl : Border
 {
     private const int MaxDepth = 10;
@@ -16,6 +13,7 @@ public sealed class ConditionGroupControl : Border
     private readonly int _depth;
     private readonly bool _isRoot;
     private readonly Func<IReadOnlyList<string>> _parameterNamesProvider;
+    private readonly Func<IReadOnlyList<string>> _referenceNamesProvider;
     private readonly Action _onChanged;
     private readonly Action<ConditionGroupControl>? _onDelete;
 
@@ -26,6 +24,7 @@ public sealed class ConditionGroupControl : Border
         int depth,
         bool isRoot,
         Func<IReadOnlyList<string>> parameterNamesProvider,
+        Func<IReadOnlyList<string>> referenceNamesProvider,
         Action onChanged,
         Action<ConditionGroupControl>? onDelete)
     {
@@ -33,6 +32,7 @@ public sealed class ConditionGroupControl : Border
         _depth = depth;
         _isRoot = isRoot;
         _parameterNamesProvider = parameterNamesProvider;
+        _referenceNamesProvider = referenceNamesProvider;
         _onChanged = onChanged;
         _onDelete = onDelete;
 
@@ -49,7 +49,6 @@ public sealed class ConditionGroupControl : Border
     {
         var outer = new StackPanel { Orientation = Orientation.Vertical };
 
-        // header
         var header = new WrapPanel { Margin = new Thickness(0, 0, 0, 6) };
 
         var logicLabel = new TextBlock
@@ -148,14 +147,14 @@ public sealed class ConditionGroupControl : Border
             {
                 var ctrl = new ConditionGroupControl(
                     child, _depth + 1, isRoot: false,
-                    _parameterNamesProvider, _onChanged,
+                    _parameterNamesProvider, _referenceNamesProvider, _onChanged,
                     onDelete: c => RemoveChild(c));
                 _childrenPanel.Children.Add(ctrl);
             }
             else
             {
                 var ctrl = new ConditionRowControl(
-                    child, _parameterNamesProvider, _onChanged,
+                    child, _parameterNamesProvider, _referenceNamesProvider, _onChanged,
                     row => RemoveRow(row));
                 _childrenPanel.Children.Add(ctrl);
             }
@@ -167,7 +166,6 @@ public sealed class ConditionGroupControl : Border
         if (ctrl == this) return;
         for (int i = 0; i < _model.Children.Count; i++)
         {
-            // Match by reference.
             var candidate = _model.Children[i];
             if (candidate.Kind == "group" && ReferenceEquals(candidate, ctrl._model))
             {
@@ -193,15 +191,11 @@ public sealed class ConditionGroupControl : Border
         foreach (var child in _model.Children)
         {
             if (child.Kind != "condition") continue;
-            // Build a probe row and compare references by identity of the model.
-            // The row control does not expose its model; use the closure trick:
-            // we stored the model in the constructor. Track it via a static map.
             if (RowModelMap.TryGetValue(row, out var m) && ReferenceEquals(m, child)) return child;
         }
         return null;
     }
 
-    // Static identity maps so we can locate the model for a control instance.
     internal static readonly Dictionary<ConditionRowControl, EditorNode> RowModelMap = new();
     internal static readonly Dictionary<ConditionGroupControl, EditorNode> GroupModelMap = new();
 }

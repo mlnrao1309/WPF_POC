@@ -16,4 +16,5 @@ public sealed record Reference(
     decimal High,
     decimal Low,
     decimal Close,
+    decimal? CapturedValue, // <-- NEW
     DateTimeOffset CapturedAtEvaluationTime);

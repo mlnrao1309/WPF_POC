@@ -3,11 +3,12 @@ using System.Text.Json.Serialization;
 namespace AlgoTrading.Models;
 
 [JsonPolymorphic(TypeDiscriminatorPropertyName = "kind")]
-[JsonDerivedType(typeof(FieldExpression),       typeDiscriminator: "field")]
-[JsonDerivedType(typeof(NumberExpression),      typeDiscriminator: "number")]
-[JsonDerivedType(typeof(IndicatorExpression),   typeDiscriminator: "indicator")]
-[JsonDerivedType(typeof(ParameterExpression),   typeDiscriminator: "parameter")]
+[JsonDerivedType(typeof(FieldExpression), typeDiscriminator: "field")]
+[JsonDerivedType(typeof(NumberExpression), typeDiscriminator: "number")]
+[JsonDerivedType(typeof(IndicatorExpression), typeDiscriminator: "indicator")]
+[JsonDerivedType(typeof(ParameterExpression), typeDiscriminator: "parameter")]
 [JsonDerivedType(typeof(CalculationExpression), typeDiscriminator: "calculation")]
+[JsonDerivedType(typeof(ReferenceExpression), typeDiscriminator: "reference")]
 public abstract class ValueExpression
 {
 }
@@ -32,8 +33,10 @@ public sealed class IndicatorExpression : ValueExpression
     public string? Output { get; set; }
     public ValueExpression? Source { get; set; }
     public Dictionary<string, decimal>? Params { get; set; }
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public Condition? Predicate { get; set; }
+    public Condition? Predicate { get; set; } // <-- Reverted to Condition
+
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     public int Lookback { get; set; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -50,4 +53,10 @@ public sealed class CalculationExpression : ValueExpression
     public CalculationOp Op { get; set; }
     public ValueExpression Left { get; set; } = null!;
     public ValueExpression Right { get; set; } = null!;
+}
+
+public sealed class ReferenceExpression : ValueExpression
+{
+    public string Id { get; set; } = string.Empty;
+    public string Field { get; set; } = "High";
 }

@@ -2,30 +2,26 @@ using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Runtime;
 
-/// <summary>
-/// Resolves a ValueExpression at a given base bar index. extraOffset is added
-/// to the expression's own Offset where the expression has one; used by
-/// crossover semantics (Â§2.5) where the "previous" value is the same
-/// expression at offset+1. Returns false when the expression has no value at
-/// that bar (start of data or warmup).
-/// </summary>
 public sealed class ExpressionEvaluator
 {
     private readonly TimeframeAccessor _accessor;
     private readonly IndicatorProvider _indicators;
     private readonly IReadOnlyDictionary<string, decimal> _parameters;
+    private readonly IReadOnlyDictionary<string, ReferenceValue> _references;
 
-    public ExpressionEvaluator(TimeframeAccessor accessor,
-                               IndicatorProvider indicators,
-                               IReadOnlyDictionary<string, decimal> parameters)
+    public ExpressionEvaluator(
+        TimeframeAccessor accessor,
+        IndicatorProvider indicators,
+        IReadOnlyDictionary<string, decimal> parameters,
+        IReadOnlyDictionary<string, ReferenceValue> references)
     {
         _accessor = accessor;
         _indicators = indicators;
         _parameters = parameters;
+        _references = references;
     }
 
-    public bool TryEvaluate(ValueExpression expr, Timeframe defaultTf,
-                            int baseIndex, int extraOffset, out decimal value)
+    public bool TryEvaluate(ValueExpression expr, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
     {
         switch (expr)
         {
@@ -48,6 +44,35 @@ public sealed class ExpressionEvaluator
             case IndicatorExpression ie:
                 return TryIndicator(ie, defaultTf, baseIndex, extraOffset, out value);
 
+            case ReferenceExpression re:
+                if (_references.TryGetValue(re.Id, out var refVal))
+                {
+                    if (re.Field == "Value")
+                    {
+                        if (refVal.CapturedValue.HasValue) { value = refVal.CapturedValue.Value; return true; }
+                        value = 0m; return false;
+                    }
+
+                    if (re.Field == "AgeInBars")
+                    {
+                        value = 0m; return true;
+                    }
+
+                    var bar = refVal.Candle;
+                    value = re.Field switch
+                    {
+                        "High" => bar.High,
+                        "Low" => bar.Low,
+                        "Open" => bar.Open,
+                        "Close" => bar.Close,
+                        "Volume" => bar.Volume,
+                        _ => 0m
+                    };
+                    return true;
+                }
+                value = 0m;
+                return false;
+
             case CalculationExpression ce:
                 return TryCalculation(ce, defaultTf, baseIndex, extraOffset, out value);
 
@@ -57,8 +82,7 @@ public sealed class ExpressionEvaluator
         }
     }
 
-    private bool TryField(FieldExpression fe, Timeframe defaultTf,
-                          int baseIndex, int extraOffset, out decimal value)
+    private bool TryField(FieldExpression fe, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
     {
         var tf = fe.Timeframe ?? defaultTf;
         var aligned = _accessor.Resolve(tf);
@@ -71,8 +95,7 @@ public sealed class ExpressionEvaluator
         return true;
     }
 
-    private bool TryIndicator(IndicatorExpression ie, Timeframe defaultTf,
-                              int baseIndex, int extraOffset, out decimal value)
+    private bool TryIndicator(IndicatorExpression ie, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
     {
         var tf = ie.Timeframe ?? defaultTf;
         var aligned = _accessor.Resolve(tf);
@@ -93,8 +116,7 @@ public sealed class ExpressionEvaluator
         return true;
     }
 
-    private bool TryCalculation(CalculationExpression ce, Timeframe defaultTf,
-                                int baseIndex, int extraOffset, out decimal value)
+    private bool TryCalculation(CalculationExpression ce, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
     {
         if (ce.Left is null || ce.Right is null) { value = 0m; return false; }
         if (!TryEvaluate(ce.Left, defaultTf, baseIndex, extraOffset, out var l)) { value = 0m; return false; }
@@ -102,7 +124,7 @@ public sealed class ExpressionEvaluator
 
         switch (ce.Op)
         {
-            case CalculationOp.Add:      value = l + r; return true;
+            case CalculationOp.Add: value = l + r; return true;
             case CalculationOp.Subtract: value = l - r; return true;
             case CalculationOp.Multiply: value = l * r; return true;
             case CalculationOp.Divide:
@@ -111,9 +133,9 @@ public sealed class ExpressionEvaluator
             case CalculationOp.Modulo:
                 if (r == 0m) { value = 0m; return false; }
                 value = l % r; return true;
-            case CalculationOp.Min:      value = Math.Min(l, r); return true;
-            case CalculationOp.Max:      value = Math.Max(l, r); return true;
-            default:                     value = 0m; return false;
+            case CalculationOp.Min: value = Math.Min(l, r); return true;
+            case CalculationOp.Max: value = Math.Max(l, r); return true;
+            default: value = 0m; return false;
         }
     }
 }

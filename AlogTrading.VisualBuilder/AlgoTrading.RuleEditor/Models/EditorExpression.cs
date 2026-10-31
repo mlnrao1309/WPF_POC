@@ -1,10 +1,5 @@
 namespace AlgoTrading.RuleEditor.Models;
 
-/// <summary>
-/// Editor-side, mutable value expression. Fields not relevant to the current
-/// Kind are ignored during serialization but preserved in memory, so switching
-/// kinds back and forth does not lose sub-editors.
-/// </summary>
 public sealed class EditorExpression
 {
     public string Kind { get; set; } = "field";
@@ -21,6 +16,10 @@ public sealed class EditorExpression
 
     // parameter
     public string? ParameterName { get; set; }
+
+    // reference
+    public string? ReferenceId { get; set; }
+    public string? ReferenceField { get; set; } = "High";
 
     // indicator
     public string? Indicator { get; set; }

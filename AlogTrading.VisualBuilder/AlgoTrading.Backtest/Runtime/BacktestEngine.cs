@@ -8,14 +8,6 @@ using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Runtime;
 
-/// <summary>
-/// Single-instrument, single-position backtest engine (Section 5).
-/// Signals are evaluated on completed bar i and queued for execution at
-/// bar i+1's open (Section 5.3). Intrabar SL/TP execute within bar i against
-/// the bar's High/Low. Per Section 5.3's "continue to next bar" clause, no
-/// signal evaluation happens on a bar that saw an intrabar exit.
-/// Equity is marked-to-market at each bar's close.
-/// </summary>
 public sealed class BacktestEngine
 {
     private readonly BacktestEngineOptions _options;
@@ -33,6 +25,7 @@ public sealed class BacktestEngine
             throw new ArgumentOutOfRangeException(nameof(options), "Capital and loss limits must be positive.");
         if (!Enum.IsDefined(options.LossBasis))
             throw new ArgumentOutOfRangeException(nameof(options.LossBasis));
+            
         _costs = CostsConfig.Parse(options.CostsJson);
         _slippage = SlippageConfig.Parse(options.SlippageJson);
         _margins = MarginConfig.Parse(options.MarginsJson);
@@ -50,8 +43,7 @@ public sealed class BacktestEngine
         return new SpreadSlippageModel(cfg.Equity.SpreadPercent);
     }
 
-    public BacktestResult Run(RuleDefinition rule, IBarSeries baseSeries,
-                              CancellationToken ct = default)
+    public BacktestResult Run(RuleDefinition rule, IBarSeries baseSeries, CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(rule);
         ArgumentNullException.ThrowIfNull(baseSeries);
@@ -62,8 +54,12 @@ public sealed class BacktestEngine
         var cache = new TimeframeCache(baseSeries, _options.DailySeries, _options.PreparedSeries);
         var accessor = new TimeframeAccessor(baseSeries.InstrumentToken, baseSeries, cache);
         var parameters = BuildParameters(rule);
-        var indicators = new IndicatorProvider(accessor, parameters);
-        var expr = new ExpressionEvaluator(accessor, indicators, parameters);
+        
+        // State store for variables
+        var references = new Dictionary<string, ReferenceValue>(StringComparer.OrdinalIgnoreCase);
+
+        var indicators = new IndicatorProvider(accessor, parameters, references);
+        var expr = new ExpressionEvaluator(accessor, indicators, parameters, references);
         var cond = new ConditionEvaluator(expr);
 
         var defaultTf = rule.EvaluationTimeframe;
@@ -86,6 +82,8 @@ public sealed class BacktestEngine
         var highs = baseSeries.High.Span;
         var lows = baseSeries.Low.Span;
         var opens = baseSeries.Open.Span;
+        var volumes = baseSeries.Volume.Span;
+        var ois = baseSeries.OI.Span;
         var dts = baseSeries.DateTime.Span;
 
         int barCount = baseSeries.Count;
@@ -101,8 +99,7 @@ public sealed class BacktestEngine
             if (pendingExitReason.HasValue && position.IsOpen)
             {
                 var fill = ApplyExitSlippage(position.Direction, opens[i]);
-                var trade = CloseTrade(tradeId++, rule, position, fill,
-                                       dts[i], i, pendingExitReason.Value);
+                var trade = CloseTrade(tradeId++, rule, position, fill, dts[i], i, pendingExitReason.Value);
                 trades.Add(trade);
                 equityBase += trade.NetPnL;
                 position.Reset();
@@ -120,10 +117,10 @@ public sealed class BacktestEngine
                     EntryPrice = fill, ExitPrice = 0m, Quantity = qty,
                     Direction = rule.Direction, Mode = rule.ExecutionMode, Scope = TradeCostScope.Entry
                 }).Total;
+                
                 if (requiredMargin + entryCosts <= equityBase)
                 {
-                    OpenPosition(position, rule, fill, dts[i], i, qty, entryCosts,
-                                 slRuleGroup, tpRuleGroup);
+                    OpenPosition(position, rule, fill, dts[i], i, qty, entryCosts, slRuleGroup, tpRuleGroup);
                 }
                 pendingEntry = false;
             }
@@ -136,8 +133,7 @@ public sealed class BacktestEngine
                 var (triggered, exitPrice, reason) = CheckIntrabarExit(position, highs[i], lows[i]);
                 if (triggered)
                 {
-                    var trade = CloseTrade(tradeId++, rule, position, exitPrice,
-                                           dts[i], i, reason);
+                    var trade = CloseTrade(tradeId++, rule, position, exitPrice, dts[i], i, reason);
                     trades.Add(trade);
                     equityBase += trade.NetPnL;
                     position.Reset();
@@ -145,8 +141,6 @@ public sealed class BacktestEngine
                 }
             }
 
-            // Spec 5.3: "continue to next bar" after an intrabar close.
-            // No signal evaluation, no entry queueing on this bar.
             if (intrabarExitHappened)
             {
                 pendingExitReason = null;
@@ -154,34 +148,76 @@ public sealed class BacktestEngine
             }
             else
             {
+                // 3.5 Evaluate Stateful References (One Trigger -> Multiple Captures)
+                if (rule.References != null)
+                {
+                    foreach (var refBlock in rule.References)
+                    {
+                        // Check if any of the captures for this block currently exist in memory
+                        bool anyExists = false;
+                        foreach (var cap in refBlock.Captures)
+                        {
+                            if (references.ContainsKey(cap.Id)) { anyExists = true; break; }
+                        }
+
+                        bool canCapture = !anyExists;
+
+                        // Handle ClearOn logic
+                        if (anyExists && refBlock.ClearOn != null)
+                        {
+                            if (cond.Evaluate(refBlock.ClearOn, defaultTf, i))
+                            {
+                                foreach (var cap in refBlock.Captures)
+                                    references.Remove(cap.Id);
+                                canCapture = true; // Re-capture on the same bar if clear fired
+                            }
+                        }
+
+                        // Evaluate Trigger and Capture
+                        if (canCapture && cond.Evaluate(refBlock.Trigger, defaultTf, i))
+                        {
+                            var refTf = refBlock.Timeframe;
+                            var alignedRef = accessor.Resolve(refTf);
+                            var refIndex = alignedRef.BaseToTfIndex[i];
+                            
+                            if (refIndex >= 0)
+                            {
+                                var time = dts[i];
+                                var refOpen = alignedRef.GetFieldSpan("Open")[refIndex];
+                                var refHigh = alignedRef.GetFieldSpan("High")[refIndex];
+                                var refLow = alignedRef.GetFieldSpan("Low")[refIndex];
+                                var refClose = alignedRef.GetFieldSpan("Close")[refIndex];
+                                var refVol = alignedRef.GetFieldSpan("Volume")[refIndex];
+                                var refOi = alignedRef.GetFieldSpan("OI")[refIndex];
+                                var candle = new Candle(time, refOpen, refHigh, refLow, refClose, refVol, refOi);
+
+                                // Iterate through the array of variables attached to this trigger
+                                foreach (var capture in refBlock.Captures)
+                                {
+                                    decimal? capturedValue = null;
+                                    if (capture.Value != null && expr.TryEvaluate(capture.Value, defaultTf, i, 0, out var v))
+                                    {
+                                        capturedValue = v;
+                                    }
+                                    references[capture.Id] = new ReferenceValue(candle, capturedValue);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 // 4. Evaluate signals on bar i's completed close.
-                //    A disabled root section is treated as "not participating":
-                //      eligibility -> no gate (always eligible)
-                //      entry / protection / exit / fullExit -> never fires
                 bool eligibility = rule.Eligibility is null
                     || !rule.Eligibility.Enabled
                     || cond.EvaluateGroup(rule.Eligibility, defaultTf, i);
 
-                bool entry       = rule.Entry is not null
-                    && rule.Entry.Enabled
-                    && cond.EvaluateGroup(rule.Entry, defaultTf, i);
+                bool entry       = rule.Entry is not null && rule.Entry.Enabled && cond.EvaluateGroup(rule.Entry, defaultTf, i);
+                bool protection  = rule.Protection is not null && rule.Protection.Enabled && cond.EvaluateGroup(rule.Protection, defaultTf, i);
+                bool exit        = rule.Exit is not null && rule.Exit.Enabled && cond.EvaluateGroup(rule.Exit, defaultTf, i);
+                bool fullExit    = rule.FullExit is not null && rule.FullExit.Enabled && cond.EvaluateGroup(rule.FullExit, defaultTf, i);
 
-                bool protection  = rule.Protection is not null
-                    && rule.Protection.Enabled
-                    && cond.EvaluateGroup(rule.Protection, defaultTf, i);
-
-                bool exit        = rule.Exit is not null
-                    && rule.Exit.Enabled
-                    && cond.EvaluateGroup(rule.Exit, defaultTf, i);
-
-                bool fullExit    = rule.FullExit is not null
-                    && rule.FullExit.Enabled
-                    && cond.EvaluateGroup(rule.FullExit, defaultTf, i);
-
-                bool slRule = slRuleGroup is not null
-                    && cond.EvaluateGroup(slRuleGroup, defaultTf, i);
-                bool tpRule = tpRuleGroup is not null
-                    && cond.EvaluateGroup(tpRuleGroup, defaultTf, i);
+                bool slRule = slRuleGroup is not null && cond.EvaluateGroup(slRuleGroup, defaultTf, i);
+                bool tpRule = tpRuleGroup is not null && cond.EvaluateGroup(tpRuleGroup, defaultTf, i);
 
                 _options.SignalObserver?.Invoke(new SignalObservation(
                     DateTime.SpecifyKind(dts[i], DateTimeKind.Utc),
@@ -189,8 +225,7 @@ public sealed class BacktestEngine
                     eligibility, entry, protection, exit, fullExit, slRule, tpRule));
 
                 // 5. Queue signal-based exits for bar i+1's open.
-                if (position.IsOpen && i + 1 < barCount &&
-                    (fullExit || protection || exit || slRule || tpRule))
+                if (position.IsOpen && i + 1 < barCount && (fullExit || protection || exit || slRule || tpRule))
                 {
                     ExitReason reason;
                     if (fullExit)        reason = ExitReason.FullExit;
@@ -202,8 +237,7 @@ public sealed class BacktestEngine
                 }
 
                 // 6. Queue signal-based entries for bar i+1's open.
-                if (!position.IsOpen && !pendingExitReason.HasValue
-                    && eligibility && entry && i + 1 < barCount)
+                if (!position.IsOpen && !pendingExitReason.HasValue && eligibility && entry && i + 1 < barCount)
                 {
                     pendingEntry = true;
                 }
@@ -226,8 +260,7 @@ public sealed class BacktestEngine
         {
             int last = barCount - 1;
             var fill = ApplyExitSlippage(position.Direction, closes[last]);
-            var trade = CloseTrade(tradeId++, rule, position, fill,
-                                   dts[last], last, ExitReason.EndOfData);
+            var trade = CloseTrade(tradeId++, rule, position, fill, dts[last], last, ExitReason.EndOfData);
             trades.Add(trade);
             equityBase += trade.NetPnL;
             position.Reset();
@@ -236,9 +269,7 @@ public sealed class BacktestEngine
                 equity[^1] = new EquityPoint { DateTime = dts[last], Equity = equityBase };
         }
 
-        var metrics = MetricsCalculator.Compute(trades, equity,
-                                                _options.InitialCapital,
-                                                _options.RiskFreeRatePercent);
+        var metrics = MetricsCalculator.Compute(trades, equity, _options.InitialCapital, _options.RiskFreeRatePercent);
 
         var record = new ReproducibilityRecord
         {
@@ -270,8 +301,6 @@ public sealed class BacktestEngine
         return result;
     }
 
-    // ---------- entry / exit helpers ----------
-
     private decimal ApplyEntrySlippage(Direction dir, decimal refPrice)
     {
         var s = _slippageModel.Compute(refPrice);
@@ -284,9 +313,7 @@ public sealed class BacktestEngine
         return dir == Direction.Long ? refPrice - s : refPrice + s;
     }
 
-    private void OpenPosition(PositionState p, RuleDefinition rule, decimal fill,
-                              DateTime time, int barIndex, int qty, decimal entryCosts,
-                              ConditionGroup? slRuleGroup, ConditionGroup? tpRuleGroup)
+    private void OpenPosition(PositionState p, RuleDefinition rule, decimal fill, DateTime time, int barIndex, int qty, decimal entryCosts, ConditionGroup? slRuleGroup, ConditionGroup? tpRuleGroup)
     {
         p.IsOpen = true;
         p.Direction = rule.Direction;
@@ -305,13 +332,9 @@ public sealed class BacktestEngine
         if (rule.StopLoss is { } sl)
         {
             if (sl.Mode == StopLossMode.Percentage && sl.Value > 0m)
-                p.StopLossPrice = rule.Direction == Direction.Long
-                    ? fill * (1m - sl.Value / 100m)
-                    : fill * (1m + sl.Value / 100m);
+                p.StopLossPrice = rule.Direction == Direction.Long ? fill * (1m - sl.Value / 100m) : fill * (1m + sl.Value / 100m);
             else if (sl.Mode == StopLossMode.Points && sl.Value > 0m)
-                p.StopLossPrice = rule.Direction == Direction.Long
-                    ? fill - sl.Value
-                    : fill + sl.Value;
+                p.StopLossPrice = rule.Direction == Direction.Long ? fill - sl.Value : fill + sl.Value;
             else if (sl.Mode == StopLossMode.Rule)
                 p.StopLossRuleGroup = slRuleGroup;
         }
@@ -319,20 +342,15 @@ public sealed class BacktestEngine
         if (rule.Target is { } tp)
         {
             if (tp.Mode == TargetMode.Percentage && tp.Value > 0m)
-                p.TargetPrice = rule.Direction == Direction.Long
-                    ? fill * (1m + tp.Value / 100m)
-                    : fill * (1m - tp.Value / 100m);
+                p.TargetPrice = rule.Direction == Direction.Long ? fill * (1m + tp.Value / 100m) : fill * (1m - tp.Value / 100m);
             else if (tp.Mode == TargetMode.Points && tp.Value > 0m)
-                p.TargetPrice = rule.Direction == Direction.Long
-                    ? fill + tp.Value
-                    : fill - tp.Value;
+                p.TargetPrice = rule.Direction == Direction.Long ? fill + tp.Value : fill - tp.Value;
             else if (tp.Mode == TargetMode.Rule)
                 p.TargetRuleGroup = tpRuleGroup;
         }
     }
 
-    private (bool triggered, decimal exitPrice, ExitReason reason) CheckIntrabarExit(
-        PositionState p, decimal high, decimal low)
+    private (bool triggered, decimal exitPrice, ExitReason reason) CheckIntrabarExit(PositionState p, decimal high, decimal low)
     {
         if (p.Direction == Direction.Long)
         {
@@ -367,9 +385,7 @@ public sealed class BacktestEngine
         return (false, 0m, ExitReason.ExitCondition);
     }
 
-    private Trade CloseTrade(int id, RuleDefinition rule, PositionState p,
-                             decimal exitFill, DateTime exitTime, int exitBarIndex,
-                             ExitReason reason)
+    private Trade CloseTrade(int id, RuleDefinition rule, PositionState p, decimal exitFill, DateTime exitTime, int exitBarIndex, ExitReason reason)
     {
         decimal gross = p.Direction == Direction.Long
             ? (exitFill - p.EntryPrice) * p.Quantity
@@ -377,11 +393,8 @@ public sealed class BacktestEngine
 
         var ctx = new TradeExecutionContext
         {
-            EntryPrice = p.EntryPrice,
-            ExitPrice = exitFill,
-            Quantity = p.Quantity,
-            Direction = p.Direction,
-            Mode = rule.ExecutionMode
+            EntryPrice = p.EntryPrice, ExitPrice = exitFill, Quantity = p.Quantity,
+            Direction = p.Direction, Mode = rule.ExecutionMode
         };
         var costs = _costModel.Compute(ctx);
         decimal net = gross - costs.Total;
@@ -392,27 +405,11 @@ public sealed class BacktestEngine
 
         return new Trade
         {
-            TradeId = id,
-            Direction = p.Direction,
-            EntryTime = p.EntryTime,
-            ExitTime = exitTime,
-            EntryPrice = p.EntryPrice,
-            ExitPrice = exitFill,
-            Quantity = p.Quantity,
-            GrossPnL = gross,
-            Brokerage = costs.Brokerage,
-            STT = costs.STT,
-            ExchangeTxn = costs.ExchangeTxn,
-            SEBI = costs.SEBI,
-            StampDuty = costs.StampDuty,
-            GST = costs.GST,
-            TotalCosts = costs.Total,
-            NetPnL = net,
-            MAE = p.MAE,
-            MFE = p.MFE,
-            BarsHeld = barsHeld,
-            DaysHeld = daysHeld,
-            ExitReason = reason
+            TradeId = id, Direction = p.Direction, EntryTime = p.EntryTime, ExitTime = exitTime,
+            EntryPrice = p.EntryPrice, ExitPrice = exitFill, Quantity = p.Quantity,
+            GrossPnL = gross, Brokerage = costs.Brokerage, STT = costs.STT, ExchangeTxn = costs.ExchangeTxn,
+            SEBI = costs.SEBI, StampDuty = costs.StampDuty, GST = costs.GST, TotalCosts = costs.Total, NetPnL = net,
+            MAE = p.MAE, MFE = p.MFE, BarsHeld = barsHeld, DaysHeld = daysHeld, ExitReason = reason
         };
     }
 
@@ -432,19 +429,11 @@ public sealed class BacktestEngine
             SchemaVersion = 1,
             Reproducibility = new ReproducibilityRecord
             {
-                RuleJson = RuleDefinitionJson.Serialize(rule),
-                DataFrom = baseSeries.From,
-                DataTo = baseSeries.To,
-                EngineVersion = EngineInfo.Version,
-                RunAt = DateTime.UtcNow,
-                DataSource = _options.DataSource,
-                InstrumentToken = baseSeries.InstrumentToken,
-                BaseTimeframe = baseSeries.Timeframe.ToString(),
-                RunId = _options.RunId
+                RuleJson = RuleDefinitionJson.Serialize(rule), DataFrom = baseSeries.From, DataTo = baseSeries.To,
+                EngineVersion = EngineInfo.Version, RunAt = DateTime.UtcNow, DataSource = _options.DataSource,
+                InstrumentToken = baseSeries.InstrumentToken, BaseTimeframe = baseSeries.Timeframe.ToString(), RunId = _options.RunId
             },
-            Metrics = new BacktestMetrics(),
-            Trades = Array.Empty<Trade>(),
-            EquityCurve = Array.Empty<EquityPoint>()
+            Metrics = new BacktestMetrics(), Trades = Array.Empty<Trade>(), EquityCurve = Array.Empty<EquityPoint>()
         };
         result.RiskAssessment = RiskAssessmentCalculator.Compute(result, _options);
         return result;

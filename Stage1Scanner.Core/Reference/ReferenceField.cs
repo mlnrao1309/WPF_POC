@@ -14,5 +14,9 @@ public enum ReferenceField
     /// itself, 1 on the next closed bar, etc. Enables "N+1 candles later"
     /// style rules.
     /// </summary>
-    AgeInBars
+    AgeInBars,
+    /// <summary>
+    /// The custom calculated value captured when the trigger fired.
+    /// </summary>
+    Value
 }

@@ -8,23 +8,22 @@ using AlgoTrading.Models;
 
 namespace AlgoTrading.Backtest.Runtime;
 
-/// <summary>
-/// Resolves an IndicatorExpression to an IndicatorSeries, caching by
-/// (token, tf, kind, output, params, source) per Section 4.11. Sources must
-/// share the parent indicator's timeframe in v1.
-/// </summary>
 public sealed partial class IndicatorProvider
 {
     private readonly TimeframeAccessor _accessor;
     private readonly Dictionary<string, IndicatorSeries> _cache = new(StringComparer.Ordinal);
-
     private readonly IReadOnlyDictionary<string, decimal> _parameters;
-    public IndicatorProvider(TimeframeAccessor accessor, IReadOnlyDictionary<string, decimal>? parameters = null)
+    private readonly IReadOnlyDictionary<string, ReferenceValue> _references;
+
+    public IndicatorProvider(
+        TimeframeAccessor accessor,
+        IReadOnlyDictionary<string, decimal>? parameters = null,
+        IReadOnlyDictionary<string, ReferenceValue>? references = null)
     {
         _accessor = accessor;
         _parameters = parameters ?? new Dictionary<string, decimal>();
+        _references = references ?? new Dictionary<string, ReferenceValue>();
     }
-
     public IndicatorSeries Resolve(IndicatorExpression expr, Timeframe defaultTf)
     {
         ArgumentNullException.ThrowIfNull(expr);
@@ -138,7 +137,6 @@ public sealed partial class IndicatorProvider
                     Source(Core.IndicatorType.BollingerBands, Period(), multiplier: P("stdDev", 2), component: Rules.IndicatorComponent.Basis).Values,
                     Source(Core.IndicatorType.BollingerBands, Period(), multiplier: P("stdDev", 2), component: Rules.IndicatorComponent.Lower).Values);
             case IndicatorKind.Trix:
-                // Preserve the existing signal parameter using Stage1's EMA over Stage1's TRIX.
                 var raw = Source(Core.IndicatorType.TRIX, Period(15));
                 var signal = new Rules.IndicatorSpec(Core.IndicatorType.EMA, Period1: (int)P("signal", 9));
                 return Single(raw.ApplySourceIndicator(signal, "Builder TRIX signal"));
@@ -214,7 +212,6 @@ public sealed partial class IndicatorProvider
 
     private IndicatorSeries ComputePivots(IndicatorKind kind, AlignedSeries target)
     {
-        // Use the target's requested timeframe (D, W, or M) instead of hardcoding "D".
         var tf = target.Timeframe;
         var bars = ToCandles(target, tf);
         
@@ -230,8 +227,6 @@ public sealed partial class IndicatorProvider
         }
         else
         {
-            // Output "P" instead of "PP" to match Stage1Scanner.Core.PivotLevel and the UI.
-            // Include R4, R5, S4, S5.
             names = ["P", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5"];
             outputs = names.Select(_ => new decimal?[bars.Count]).ToArray();
             for (int i = 1; i < bars.Count; i++)
@@ -255,12 +250,10 @@ public sealed partial class IndicatorProvider
         };
     }
 
-    private decimal?[] BuildSourceSeries(ValueExpression? src, Timeframe tf,
-                                        AlignedSeries aligned, int tfCount)
+    private decimal?[] BuildSourceSeries(ValueExpression? src, Timeframe tf, AlignedSeries aligned, int tfCount)
     {
         if (src is null)
         {
-            // None-source indicator: no source series needed. Empty array.
             return Array.Empty<decimal?>();
         }
 
@@ -268,8 +261,7 @@ public sealed partial class IndicatorProvider
         {
             var srcTf = f.Timeframe;
             if (srcTf.HasValue && !srcTf.Value.Equals(tf))
-                throw new NotSupportedException(
-                    "v1: indicator source must share the parent indicator's timeframe.");
+                throw new NotSupportedException("v1: indicator source must share the parent indicator's timeframe.");
 
             var span = aligned.GetFieldSpan(f.Field.ToString());
             var result = new decimal?[tfCount];
@@ -286,8 +278,7 @@ public sealed partial class IndicatorProvider
         {
             var srcTf = innerExpr.Timeframe;
             if (srcTf.HasValue && !srcTf.Value.Equals(tf))
-                throw new NotSupportedException(
-                    "v1: indicator source must share the parent indicator's timeframe.");
+                throw new NotSupportedException("v1: indicator source must share the parent indicator's timeframe.");
 
             var inner = Resolve(innerExpr, tf);
             var outName = innerExpr.Output ?? inner.OutputNames[0];
@@ -311,7 +302,6 @@ public sealed partial class IndicatorProvider
             return result;
         }
 
-        throw new NotSupportedException(
-            "Indicator source must be FieldExpression or IndicatorExpression (v1).");
+        throw new NotSupportedException("Indicator source must be FieldExpression or IndicatorExpression (v1).");
     }
 }

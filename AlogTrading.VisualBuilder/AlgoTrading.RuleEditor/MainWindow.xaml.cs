@@ -23,6 +23,7 @@ public partial class MainWindow : Window
 
     private EditorStrategy? _strategy;
     private bool _suppressSlotApply;
+    private bool _lastValidationOk;
 
     private double _lastSidePanelWidth = SidePanelDefaultWidth;
     private bool _sidePanelVisible = true;
@@ -40,6 +41,9 @@ public partial class MainWindow : Window
 
         OverviewTabControl.RuleChanged += (s, e) => OnRuleChanged();
         OverviewTabControl.ParametersChanged += (s, e) => OnParametersChanged();
+        
+        ReferencesTabControl.Configure(this);
+        ReferencesTabControl.Changed += (s, e) => OnReferencesChanged();
 
         EligibilityTabControl.Configure(this, "eligibility", showStopLossTargetPanel: false);
         EntryTabControl.Configure(this, "entry", showStopLossTargetPanel: false);
@@ -56,15 +60,11 @@ public partial class MainWindow : Window
         _resultWatcher = new ResultWatcherService(_settings.ResultsPath);
         _resultWatcher.ResultArrived += OnResultArrived;
 
-        InputBindings.Add(new KeyBinding(
-            new RelayCommand(_ => ToggleSidePanel()),
-            Key.C, ModifierKeys.Control | ModifierKeys.Shift));
+        InputBindings.Add(new KeyBinding(new RelayCommand(_ => ToggleSidePanel()), Key.C, ModifierKeys.Control | ModifierKeys.Shift));
 
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
     }
-
-    // ---------- side panel docking ----------
 
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
@@ -99,16 +99,12 @@ public partial class MainWindow : Window
             SidePanelHost.Visibility = Visibility.Visible;
             SideSplitter.Visibility = Visibility.Visible;
             SidePanelColumn.MinWidth = SidePanelMinWidth;
-            var w = _lastSidePanelWidth < SidePanelMinWidth
-                ? SidePanelDefaultWidth
-                : _lastSidePanelWidth;
+            var w = _lastSidePanelWidth < SidePanelMinWidth ? SidePanelDefaultWidth : _lastSidePanelWidth;
             SidePanelColumn.Width = new GridLength(w, GridUnitType.Pixel);
         }
         else
         {
-            if (SidePanelColumn.ActualWidth >= SidePanelMinWidth)
-                _lastSidePanelWidth = SidePanelColumn.ActualWidth;
-
+            if (SidePanelColumn.ActualWidth >= SidePanelMinWidth) _lastSidePanelWidth = SidePanelColumn.ActualWidth;
             SidePanelHost.Visibility = Visibility.Collapsed;
             SideSplitter.Visibility = Visibility.Collapsed;
             SidePanelColumn.MinWidth = 0;
@@ -117,30 +113,13 @@ public partial class MainWindow : Window
         _sidePanelVisible = visible;
     }
 
-    private void OnSplitterDragCompleted(object sender,
-        System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    private void OnSplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
     {
-        if (SidePanelColumn.ActualWidth < SidePanelMinWidth)
-        {
-            SetSidePanelVisible(false);
-            SidePanelToggle.IsChecked = false;
-            return;
-        }
+        if (SidePanelColumn.ActualWidth < SidePanelMinWidth) { SetSidePanelVisible(false); SidePanelToggle.IsChecked = false; return; }
         _lastSidePanelWidth = SidePanelColumn.ActualWidth;
     }
 
-    // ---------- dock persistence ----------
-
-    private static string DockStatePath
-    {
-        get
-        {
-            var dir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "AlgoTrading", "RuleEditor");
-            return Path.Combine(dir, "dock-state.json");
-        }
-    }
+    private static string DockStatePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AlgoTrading", "RuleEditor", "dock-state.json");
 
     private void ApplyPersistedSidePanelState()
     {
@@ -149,18 +128,15 @@ public partial class MainWindow : Window
             var path = DockStatePath;
             if (File.Exists(path))
             {
-                var text = File.ReadAllText(path);
-                var dto = JsonSerializer.Deserialize<DockStateDto>(text);
+                var dto = JsonSerializer.Deserialize<DockStateDto>(File.ReadAllText(path));
                 if (dto is not null)
                 {
-                    if (dto.SidePanelWidth >= SidePanelMinWidth)
-                        _lastSidePanelWidth = dto.SidePanelWidth;
+                    if (dto.SidePanelWidth >= SidePanelMinWidth) _lastSidePanelWidth = dto.SidePanelWidth;
                     _sidePanelVisible = dto.SidePanelVisible;
                 }
             }
         }
         catch { }
-
         SidePanelToggle.IsChecked = _sidePanelVisible;
         SetSidePanelVisible(_sidePanelVisible);
     }
@@ -169,17 +145,10 @@ public partial class MainWindow : Window
     {
         try
         {
-            if (SidePanelColumn.ActualWidth >= SidePanelMinWidth)
-                _lastSidePanelWidth = SidePanelColumn.ActualWidth;
-
+            if (SidePanelColumn.ActualWidth >= SidePanelMinWidth) _lastSidePanelWidth = SidePanelColumn.ActualWidth;
             var dir = Path.GetDirectoryName(DockStatePath)!;
             Directory.CreateDirectory(dir);
-            var dto = new DockStateDto
-            {
-                SidePanelVisible = _sidePanelVisible,
-                SidePanelWidth = _lastSidePanelWidth
-            };
-            File.WriteAllText(DockStatePath, JsonSerializer.Serialize(dto));
+            File.WriteAllText(DockStatePath, JsonSerializer.Serialize(new DockStateDto { SidePanelVisible = _sidePanelVisible, SidePanelWidth = _lastSidePanelWidth }));
         }
         catch { }
     }
@@ -190,53 +159,51 @@ public partial class MainWindow : Window
         public double SidePanelWidth { get; set; } = SidePanelDefaultWidth;
     }
 
-    // ---------- result notification ----------
-
     private void OnResultArrived(object? sender, ResultNotification n)
     {
-        Dispatcher.BeginInvoke(new Action(() =>
-        {
-            ShowResultToast(n);
-            BacktestTabControl.RefreshRunList();
-        }));
+        Dispatcher.BeginInvoke(new Action(() => { ShowResultToast(n); BacktestTabControl.RefreshRunList(); }));
     }
 
     private void ShowResultToast(ResultNotification n)
     {
         var title = "Backtest complete";
-        if (!string.IsNullOrEmpty(n.StrategyName))
-            title = "Backtest complete: " + n.StrategyName;
-
-        var body = BuildToastBody(n);
-        ToastHost.Show(title, body);
+        if (!string.IsNullOrEmpty(n.StrategyName)) title = "Backtest complete: " + n.StrategyName;
+        ToastHost.Show(title, BuildToastBody(n));
     }
 
     private static string BuildToastBody(ResultNotification n)
     {
         var parts = new List<string>(4);
-        if (n.InstrumentToken.HasValue)
-            parts.Add("token " + n.InstrumentToken.Value);
-        if (n.TotalTrades.HasValue)
-            parts.Add("trades " + n.TotalTrades.Value);
-        if (n.NetPnL.HasValue)
-            parts.Add("Net P&L " + n.NetPnL.Value.ToString("0.00"));
-        if (n.WinRate.HasValue)
-            parts.Add("Win " + n.WinRate.Value.ToString("0.0") + "%");
+        if (n.InstrumentToken.HasValue) parts.Add("token " + n.InstrumentToken.Value);
+        if (n.TotalTrades.HasValue) parts.Add("trades " + n.TotalTrades.Value);
+        if (n.NetPnL.HasValue) parts.Add("Net P&L " + n.NetPnL.Value.ToString("0.00"));
+        if (n.WinRate.HasValue) parts.Add("Win " + n.WinRate.Value.ToString("0.0") + "%");
         return string.Join(" | ", parts);
     }
-
-    // ---------- exposed to tabs ----------
 
     public RuleDefinition? CurrentRule() => _strategy?.Rule;
 
     public IReadOnlyList<string> CurrentParameterNames()
     {
         var list = new List<string>();
-        foreach (var p in OverviewTabControl.GetParameters())
-            if (!string.IsNullOrEmpty(p.Name)) list.Add(p.Name);
+        foreach (var p in OverviewTabControl.GetParameters()) if (!string.IsNullOrEmpty(p.Name)) list.Add(p.Name);
         return list;
     }
 
+    public IReadOnlyList<string> CurrentReferenceNames()
+    {
+        var list = new List<string>();
+        // Iterate through the blocks, then the captures within them
+        foreach (var block in ReferencesTabControl.GetReferences())
+        {
+            foreach (var capture in block.Captures)
+            {
+                if (!string.IsNullOrEmpty(capture.Id))
+                    list.Add(capture.Id);
+            }
+        }
+        return list;
+    }
     public void ApplyConditionSlot(string slot, EditorNode root)
     {
         if (_strategy is null || _suppressSlotApply) return;
@@ -252,35 +219,23 @@ public partial class MainWindow : Window
         _strategy.IsDirty = true;
     }
 
-    // ---------- file menu ----------
-
     private void OnNewClick(object sender, RoutedEventArgs e) => NewStrategy();
 
     private void OnOpenClick(object sender, RoutedEventArgs e)
     {
-        var dlg = new Microsoft.Win32.OpenFileDialog
-        {
-            Filter = "Strategy JSON (*.json)|*.json",
-            Title = "Open strategy"
-        };
+        var dlg = new Microsoft.Win32.OpenFileDialog { Filter = "Strategy JSON (*.json)|*.json", Title = "Open strategy" };
         if (dlg.ShowDialog(this) != true) return;
 
         try
         {
             var rule = _fileService.Load(dlg.FileName);
-            _strategy = new EditorStrategy
-            {
-                Rule = rule,
-                CurrentFilePath = dlg.FileName,
-                IsDirty = false
-            };
+            _strategy = new EditorStrategy { Rule = rule, CurrentFilePath = dlg.FileName, IsDirty = false };
             BindAll();
             StatusText.Text = "Opened " + Path.GetFileName(dlg.FileName);
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Failed to open: " + ex.Message, "Open",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, "Failed to open: " + ex.Message, "Open", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -312,19 +267,11 @@ public partial class MainWindow : Window
             }
 
             var suggestedName = RuleFileService.SanitizeName(_strategy.Rule.StrategyName ?? "strategy");
-            var dlg = new Microsoft.Win32.SaveFileDialog
-            {
-                Filter = "Strategy JSON (*.json)|*.json",
-                FileName = suggestedName + ".json",
-                Title = forceDialog ? "Save strategy as" : "Save strategy"
-            };
+            var dlg = new Microsoft.Win32.SaveFileDialog { Filter = "Strategy JSON (*.json)|*.json", FileName = suggestedName + ".json", Title = forceDialog ? "Save strategy as" : "Save strategy" };
             if (dlg.ShowDialog(this) != true) return;
             targetPath = dlg.FileName;
         }
-        else
-        {
-            targetPath = _strategy.CurrentFilePath!;
-        }
+        else targetPath = _strategy.CurrentFilePath!;
 
         try
         {
@@ -337,12 +284,9 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Failed to save: " + ex.Message, "Save",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, "Failed to save: " + ex.Message, "Save", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
-
-    // ---------- strategy lifecycle ----------
 
     private void NewStrategy()
     {
@@ -355,8 +299,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "Failed to seed new strategy: " + ex.Message,
-                "New", MessageBoxButton.OK, MessageBoxImage.Error);
+            MessageBox.Show(this, "Failed to seed new strategy: " + ex.Message, "New", MessageBoxButton.OK, MessageBoxImage.Error);
         }
     }
 
@@ -367,6 +310,7 @@ public partial class MainWindow : Window
         try
         {
             OverviewTabControl.Bind(_strategy);
+            ReferencesTabControl.Bind(_strategy);
             EligibilityTabControl.Bind(_strategy);
             EntryTabControl.Bind(_strategy);
             ProtectionTabControl.Bind(_strategy);
@@ -375,8 +319,7 @@ public partial class MainWindow : Window
         finally { _suppressSlotApply = false; }
 
         ApplyTunedBadge();
-        FileLabel.Text = _strategy.CurrentFilePath is null
-            ? "(unsaved)" : Path.GetFileName(_strategy.CurrentFilePath);
+        FileLabel.Text = _strategy.CurrentFilePath is null ? "(unsaved)" : Path.GetFileName(_strategy.CurrentFilePath);
         UpdateWindowTitle();
         RunValidation();
     }
@@ -393,9 +336,13 @@ public partial class MainWindow : Window
         Title = name + " - AlgoTrading Rule Editor";
     }
 
-    // ---------- validation ----------
-
-    private bool _lastValidationOk;
+    private void OnReferencesChanged()
+    {
+        if (_strategy is null) return;
+        _strategy.Rule = ConditionTreeService.ApplyReferences(_strategy.Rule, ReferencesTabControl.GetReferences());
+        _strategy.IsDirty = true;
+        OnRuleChanged();
+    }
 
     private void OnParametersChanged()
     {
@@ -423,18 +370,12 @@ public partial class MainWindow : Window
         try
         {
             var r = _validator.Validate(_strategy.Rule);
-            _lastValidationOk = r.IsValid &&
-                                _validator.CheckInstrumentExists(_strategy.Rule) is null;
+            _lastValidationOk = r.IsValid && _validator.CheckInstrumentExists(_strategy.Rule) is null;
         }
-        catch
-        {
-            _lastValidationOk = false;
-        }
+        catch { _lastValidationOk = false; }
     }
 
     private bool IsValidForSave() => _lastValidationOk;
-
-    // ---------- minimal RelayCommand for key bindings ----------
 
     private sealed class RelayCommand : ICommand
     {

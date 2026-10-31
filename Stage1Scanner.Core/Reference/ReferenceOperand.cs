@@ -6,6 +6,10 @@ namespace Stage1Scanner.Core.Rules;
 /// Reads a value from a captured Reference. Returns Unknown if the
 /// reference has not been produced yet on this instrument.
 /// </summary>
+/// <summary>
+/// Reads a value from a captured Reference. Returns Unknown if the
+/// reference has not been produced yet on this instrument.
+/// </summary>
 public sealed record ReferenceOperand(string Id, ReferenceField Field) : Operand
 {
     public override OperandValue Resolve(
@@ -22,19 +26,19 @@ public sealed record ReferenceOperand(string Id, ReferenceField Field) : Operand
 
         return Field switch
         {
-            ReferenceField.Open => OperandValue.From(
-                reference.Open, reference.BarCloseTime, name, reference.Timeframe),
-            ReferenceField.High => OperandValue.From(
-                reference.High, reference.BarCloseTime, name, reference.Timeframe),
-            ReferenceField.Low => OperandValue.From(
-                reference.Low, reference.BarCloseTime, name, reference.Timeframe),
-            ReferenceField.Close => OperandValue.From(
-                reference.Close, reference.BarCloseTime, name, reference.Timeframe),
-            ReferenceField.BarOpenTime => OperandValue.From(
-                reference.BarOpenTime.ToUnixTimeSeconds(), null, name, reference.Timeframe),
-            ReferenceField.BarCloseTime => OperandValue.From(
-                reference.BarCloseTime.ToUnixTimeSeconds(), null, name, reference.Timeframe),
+            ReferenceField.Open => OperandValue.From(reference.Open, reference.BarCloseTime, name, reference.Timeframe),
+            ReferenceField.High => OperandValue.From(reference.High, reference.BarCloseTime, name, reference.Timeframe),
+            ReferenceField.Low => OperandValue.From(reference.Low, reference.BarCloseTime, name, reference.Timeframe),
+            ReferenceField.Close => OperandValue.From(reference.Close, reference.BarCloseTime, name, reference.Timeframe),
+            ReferenceField.BarOpenTime => OperandValue.From(reference.BarOpenTime.ToUnixTimeSeconds(), null, name, reference.Timeframe),
+            ReferenceField.BarCloseTime => OperandValue.From(reference.BarCloseTime.ToUnixTimeSeconds(), null, name, reference.Timeframe),
             ReferenceField.AgeInBars => ResolveAge(context, reference, name),
+
+            // NEW: Resolve the custom calculated value
+            ReferenceField.Value => reference.CapturedValue.HasValue
+                ? OperandValue.From(reference.CapturedValue.Value, reference.BarCloseTime, name, reference.Timeframe)
+                : OperandValue.Unknown,
+
             _ => OperandValue.Unknown
         };
     }
@@ -49,8 +53,7 @@ public sealed record ReferenceOperand(string Id, ReferenceField Field) : Operand
             return OperandValue.Unknown;
         }
 
-        var currentIdx = context.ResolveClosedIndex(
-            reference.Timeframe, context.EvaluationTime);
+        var currentIdx = context.ResolveClosedIndex(reference.Timeframe, context.EvaluationTime);
 
         if (currentIdx < 0)
         {
@@ -63,17 +66,12 @@ public sealed record ReferenceOperand(string Id, ReferenceField Field) : Operand
         {
             if (candles[i].CloseTime <= reference.BarCloseTime)
             {
-                return OperandValue.From(
-                    ageInBars,
-                    context.EvaluationTime,
-                    name,
-                    reference.Timeframe);
+                return OperandValue.From(ageInBars, context.EvaluationTime, name, reference.Timeframe);
             }
 
             ageInBars++;
         }
 
-        // Reference bar not found in current candles (data was replaced).
         return OperandValue.Unknown;
     }
 }

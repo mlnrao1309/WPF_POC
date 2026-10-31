@@ -1,0 +1,19 @@
+<UserControl x:Class="AlgoTrading.RuleEditor.Tabs.ReferencesTab"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="10">
+            <Button Content="+ Reference" Padding="10,4" Click="OnAddReferenceClick"/>
+            <TextBlock Text="References capture a state when a trigger condition becomes true." Margin="12,6,0,0" Foreground="DimGray"/>
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel x:Name="ItemsPanel" Margin="10,0,10,10"/>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

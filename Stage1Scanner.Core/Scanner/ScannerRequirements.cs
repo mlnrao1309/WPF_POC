@@ -48,14 +48,19 @@ public static class ScannerRequirementAnalyzer
 
         foreach (var producer in scanner.ReferenceProducers)
         {
-            if (!declaredReferenceIds.Add(producer.Id))
+            // 1. Register the IDs of all captures and collect requirements for their Values
+            foreach (var capture in producer.Captures)
+            {
+                if (!declaredReferenceIds.Add(capture.Id))
             {
                 throw new InvalidOperationException(
-                    $"Duplicate ReferenceProducer id '{producer.Id}' on " +
+                    $"Duplicate ReferenceProducer id '{capture.Id}' on " +
                     $"Scanner '{scanner.Name}'. Every ReferenceProducer must " +
                     "have a unique id.");
             }
-
+                // Collect requirements for the Operand (e.g., if the value is an Indicator or Field)
+                CollectOperand(scanner, capture.Value, requirements, additionalHistory: 0);
+            }
             // The producer needs at least one closed bar on its own timeframe
             // to capture anything. Additional history for trigger and clear
             // expressions is collected below.
