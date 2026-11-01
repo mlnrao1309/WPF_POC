@@ -86,8 +86,19 @@ public static class ConditionTreeService
 
                 block.Timeframe = GetString(el, "timeframe") ?? "15m";
 
-                if (el.TryGetProperty("trigger", out var trig))
-                    block.Trigger = NodeFromJson(trig, "group") ?? new EditorNode { Kind = "group", Logic = "All" };
+                //if (el.TryGetProperty("trigger", out var trig))
+                //    block.Trigger = NodeFromJson(trig, "group") ?? new EditorNode { Kind = "group", Logic = "All" };
+                if (el.TryGetProperty("trigger", out var trig) && trig.ValueKind != JsonValueKind.Null)
+                {
+                    block.Trigger = NodeFromJson(trig, "group")!;
+                }
+                else
+                {
+                    // Do NOT inject Close > 0. Just leave it as an empty group.
+                    // The Validator will catch this and prevent execution.
+                    block.Trigger = new EditorNode { Kind = "group", Logic = "All" };
+                    //block.Trigger = new EditorNode { Kind = "group", Logic = "All", Children = { new EditorNode { Kind = "condition", Left = new EditorExpression { Kind = "field", Field = "Close" }, Operator = "GreaterThan", Right = new EditorExpression { Kind = "number", Number = 0m } } } };
+                }
 
                 //if (el.TryGetProperty("clearOn", out var clr) && clr.ValueKind != JsonValueKind.Null)
                 //    block.ClearOn = NodeFromJson(clr, "group");
@@ -206,7 +217,9 @@ public static class ConditionTreeService
             case "parameter":
                 expr.ParameterName = GetString(el, "name"); break;
             case "reference":
-                expr.ReferenceId = GetString(el, "id"); expr.ReferenceField = GetString(el, "field") ?? "High"; break;
+                expr.ReferenceId = GetString(el, "id");
+                expr.ReferenceField = GetString(el, "field") ?? "Value"; // <-- Default to Value
+                break;
             case "indicator":
                 expr.Offset = GetInt(el, "offset", 0); expr.Timeframe = GetString(el, "timeframe"); expr.Indicator = GetString(el, "indicator") ?? "Sma"; expr.Output = GetString(el, "output");
                 if (expr.Indicator == "Camarilla") { expr.Indicator = "PivotPointsCamarilla"; if (expr.Timeframe is not ("D" or "W" or "M")) expr.Timeframe = "D"; }
@@ -241,7 +254,7 @@ public static class ConditionTreeService
                     if (expr.Indicator == "PivotPointsClassic")
                         return new JsonObject { ["kind"] = "indicator", ["offset"] = expr.Offset, ["timeframe"] = expr.Timeframe switch { "W" => "W", "M" => "M", _ => "D" }, ["indicator"] = "PivotPointsClassic", ["output"] = NormalizePivotLevel(expr.Output) };
 
-                    var indicatorKind = expr.Indicator == "PivotPointsCamarilla" ? "Camarilla" : expr.Indicator ?? "Sma";
+                    var indicatorKind = expr.Indicator ?? "Sma";
                     var obj = new JsonObject { ["kind"] = "indicator", ["offset"] = expr.Offset, ["indicator"] = indicatorKind };
 
                     if (indicatorKind == "Camarilla")

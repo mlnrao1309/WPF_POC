@@ -44,7 +44,13 @@ public partial class MainWindow : Window
         
         ReferencesTabControl.Configure(this);
         ReferencesTabControl.Changed += (s, e) => OnReferencesChanged();
-
+        ReferencesTabControl.ReferenceIdChanged += (oldId, newId) =>
+        {
+            EligibilityTabControl.UpdateReferenceId(oldId, newId);
+            EntryTabControl.UpdateReferenceId(oldId, newId);
+            ProtectionTabControl.UpdateReferenceId(oldId, newId);
+            FullExitTabControl.UpdateReferenceId(oldId, newId);
+        };
         EligibilityTabControl.Configure(this, "eligibility", showStopLossTargetPanel: false);
         EntryTabControl.Configure(this, "entry", showStopLossTargetPanel: false);
         ProtectionTabControl.Configure(this, "protection", showStopLossTargetPanel: true);
@@ -64,6 +70,8 @@ public partial class MainWindow : Window
 
         Loaded += OnWindowLoaded;
         Closing += OnWindowClosing;
+
+
     }
 
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
@@ -250,6 +258,10 @@ public partial class MainWindow : Window
 
     private void SaveCurrent(bool forceDialog)
     {
+        // FIX: Force the active textbox to commit its LostFocus before saving
+        FocusManager.SetFocusedElement(this, null);
+        Keyboard.ClearFocus();
+
         if (_strategy is null) { StatusText.Text = "Nothing to save."; return; }
 
         RunValidation();
@@ -341,6 +353,7 @@ public partial class MainWindow : Window
         if (_strategy is null) return;
         _strategy.Rule = ConditionTreeService.ApplyReferences(_strategy.Rule, ReferencesTabControl.GetReferences());
         _strategy.IsDirty = true;
+        // REMOVED: BindAll();  <-- This was causing the detach issue
         OnRuleChanged();
     }
 

@@ -12,7 +12,12 @@ public partial class ReferencesTab : UserControl
     private List<EditorReferenceBlock> _references = new();
     private MainWindow? _owner;
 
-    public ReferencesTab() => InitializeComponent();
+    public event Action<string, string>? ReferenceIdChanged; // (oldId, newId)
+
+    public ReferencesTab()
+    {
+        InitializeComponent();
+    }
     public void Configure(MainWindow owner) => _owner = owner;
 
     public void Bind(EditorStrategy? strategy)
@@ -126,10 +131,39 @@ public partial class ReferencesTab : UserControl
                 var capRow = new WrapPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 4) };
                 capRow.Children.Add(new TextBlock { Text = "let", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
 
+                // Inside the captures foreach loop:
                 var idBox = new TextBox { Width = 100, Text = capture.Id, Margin = new Thickness(0, 0, 4, 0) };
-                idBox.LostFocus += (s, e) => { capture.Id = idBox.Text; RaiseChanged(); };
-                capRow.Children.Add(idBox);
+                var originalId = capture.Id; // Capture the original ID
 
+                idBox.LostFocus += (s, e) =>
+                {
+                    var newId = idBox.Text;
+                    if (string.IsNullOrWhiteSpace(newId))
+                    {
+                        idBox.Text = capture.Id; // Revert if empty
+                        return;
+                    }
+
+                    if (capture.Id != newId)
+                    {
+                        var oldId = capture.Id;
+                        capture.Id = newId;
+
+                        // Update other reference blocks (Triggers, ClearOn, Captures)
+                        foreach (var otherBlock in _references)
+                        {
+                            ConditionTab.RenameInNode(otherBlock.Trigger, oldId, newId);
+
+                            // The ClearOn block is removed. Just iterate the captures.
+                            foreach (var cap in otherBlock.Captures)
+                                ConditionTab.RenameInExpression(cap.Value, oldId, newId);
+                        }
+
+                        ReferenceIdChanged?.Invoke(oldId, newId);
+                        RaiseChanged();
+                    }
+                };
+                capRow.Children.Add(idBox);
                 capRow.Children.Add(new TextBlock { Text = "=", VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 4, 0) });
 
                 var valCtrl = new ExpressionEditorControl(
@@ -150,7 +184,9 @@ public partial class ReferencesTab : UserControl
             var addCapBtn = new Button { Content = "+ Capture Variable", Padding = new Thickness(8, 2, 8, 2), HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(12, 4, 0, 0) };
             addCapBtn.Click += (s, e) =>
             {
-                block.Captures.Add(new EditorReferenceCapture { Id = "var" + (block.Captures.Count + 1), Value = new EditorExpression { Kind = "field", Field = "Close" } });
+                // Generate a short unique ID instead of var1, var2
+                var newId = "var_" + Guid.NewGuid().ToString("N").Substring(0, 4);
+                block.Captures.Add(new EditorReferenceCapture { Id = newId, Value = new EditorExpression { Kind = "field", Field = "Close" } });
                 RebuildUI();
                 RaiseChanged();
             };

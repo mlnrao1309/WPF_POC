@@ -125,4 +125,53 @@ public partial class ConditionTab : UserControl
             foreach (var item in el.EnumerateArray()) Walk(item, list);
         }
     }
+    public void UpdateReferenceId(string oldId, string newId)
+    {
+        if (_root is null) return;
+        bool changed = RenameInNode(_root, oldId, newId);
+        if (changed)
+        {
+            RebuildGroupUI();
+            RaiseChanged();
+        }
+    }
+
+    // Add these recursive helpers:
+    public static bool RenameInNode(EditorNode node, string oldId, string newId)
+    {
+        bool changed = false;
+        if (node == null) return false;
+
+        if (node.Kind == "condition")
+        {
+            changed |= RenameInExpression(node.Left, oldId, newId);
+            changed |= RenameInExpression(node.Right, oldId, newId);
+        }
+        else if (node.Kind == "group")
+        {
+            foreach (var child in node.Children)
+                changed |= RenameInNode(child, oldId, newId);
+        }
+        return changed;
+    }
+
+    public static bool RenameInExpression(EditorExpression? expr, string oldId, string newId)
+    {
+        bool changed = false;
+        if (expr == null) return false;
+
+        if (expr.Kind == "reference" && expr.ReferenceId == oldId)
+        {
+            expr.ReferenceId = newId;
+            changed = true;
+        }
+
+        // Walk nested expressions (Calculations, Indicator Sources, Count Predicates)
+        if (expr.Source != null) changed |= RenameInExpression(expr.Source, oldId, newId);
+        if (expr.CalcLeft != null) changed |= RenameInExpression(expr.CalcLeft, oldId, newId);
+        if (expr.CalcRight != null) changed |= RenameInExpression(expr.CalcRight, oldId, newId);
+        if (expr.Predicate != null) changed |= RenameInNode(expr.Predicate, oldId, newId);
+
+        return changed;
+    }
 }

@@ -165,14 +165,7 @@ public sealed class BacktestEngine
                 {
                     foreach (var refBlock in rule.References)
                     {
-                        bool anyExists = false;
-                        foreach (var cap in refBlock.Captures)
-                            if (references.ContainsKey(cap.Id)) { anyExists = true; break; }
-
-                        // If it exists, and we are NOT allowed to overwrite, skip to the next block
-                        if (anyExists && !refBlock.OverwriteOnTrigger) continue;
-
-                        if (cond.Evaluate(refBlock.Trigger, defaultTf, i))
+                        if (cond.Evaluate(refBlock.Trigger, refBlock.Timeframe, i))
                         {
                             var refTf = refBlock.Timeframe;
                             var alignedRef = accessor.Resolve(refTf);
@@ -191,14 +184,18 @@ public sealed class BacktestEngine
 
                                 foreach (var capture in refBlock.Captures)
                                 {
-                                    decimal? capturedValue = null;
-                                    if (capture.Value != null && expr.TryEvaluate(capture.Value, defaultTf, i, 0, out var v))
-                                    {
-                                        capturedValue = v;
-                                    }
-                                    references[capture.Id] = new ReferenceValue(candle, capturedValue);
+                                    // Check if THIS specific capture already exists
+                                    bool exists = references.ContainsKey(capture.Id);
 
-                                    traceLog?.AppendLine($"{timeIst:yyyy-MM-dd HH:mm},{i},Variable,{capture.Id},{capturedValue},\"High={refHigh}, Low={refLow}, Close={refClose}\"");
+                                    // If it exists, and we are NOT overwriting, skip this specific capture
+                                    if (exists && !refBlock.OverwriteOnTrigger) continue;
+
+                                    // Otherwise, evaluate and store
+                                    if (capture.Value != null && expr.TryEvaluate(capture.Value, refBlock.Timeframe, i, 0, out var v))
+                                    {
+                                        references[capture.Id] = new ReferenceValue(candle, v, i);
+                                        traceLog?.AppendLine($"{timeIst:yyyy-MM-dd HH:mm},{i},Variable,{capture.Id},{v},\"High={refHigh}, Low={refLow}, Close={refClose}\"");
+                                    }
                                 }
                             }
                         }

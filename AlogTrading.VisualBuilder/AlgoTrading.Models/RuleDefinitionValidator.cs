@@ -2,9 +2,17 @@ using System.Text.RegularExpressions;
 
 namespace AlgoTrading.Models;
 
-// Keep IInstrumentLookup and InstrumentInfo exactly as they are...
 public interface IInstrumentLookup { bool TryGet(uint token, out InstrumentInfo info); }
-public sealed class InstrumentInfo { public uint Token { get; init; } public string Symbol { get; init; } = string.Empty; public string? DisplayName { get; init; } public InstrumentType InstrumentType { get; init; } public int LotSize { get; init; } public decimal TickSize { get; init; } }
+
+public sealed class InstrumentInfo
+{
+    public uint Token { get; init; }
+    public string Symbol { get; init; } = string.Empty;
+    public string? DisplayName { get; init; }
+    public InstrumentType InstrumentType { get; init; }
+    public int LotSize { get; init; }
+    public decimal TickSize { get; init; }
+}
 
 public static class RuleDefinitionValidator
 {
@@ -31,20 +39,35 @@ public static class RuleDefinitionValidator
                 errs.Add(new("RULE_013", $"Parameter '{p.Name}' violates Minimum<=Default<=Maximum or Step>0.", $"parameters.{p.Name}"));
         }
 
-        // --- Reference Blocks Validation ---
         var referenceNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         for (int i = 0; i < rule.References.Count; i++)
         {
             var block = rule.References[i];
             var blockPath = $"references[{i}]";
 
+            //if (block.Trigger is null)
+            //    errs.Add(new("RULE_REF_TRIGGER", "Reference block is missing a trigger.", $"{blockPath}.trigger"));
+            //Above code is replaced with the following to allow empty triggers, which are valid and will always evaluate to false.
+            // REPLACE the trigger validation block with this:
             if (block.Trigger is null)
+            {
                 errs.Add(new("RULE_REF_TRIGGER", "Reference block is missing a trigger.", $"{blockPath}.trigger"));
+            }
+            else if (block.Trigger is ConditionGroup cg)
+            {
+                if (!ContainsEnabledCondition(cg))
+                {
+                    errs.Add(new("RULE_REF_EMPTY_TRIGGER", "Reference trigger must contain at least one enabled condition.", $"{blockPath}.trigger"));
+                }
+                else
+                {
+                    ValidateNode(block.Trigger, $"{blockPath}.trigger", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                }
+            }
             else
+            {
                 ValidateNode(block.Trigger, $"{blockPath}.trigger", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
-
-            //if (block.ClearOn is not null)
-            //    ValidateNode(block.ClearOn, $"{blockPath}.clearOn", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+            }
 
             foreach (var capture in block.Captures)
             {
@@ -58,6 +81,9 @@ public static class RuleDefinitionValidator
                 else
                     ValidateExpr(capture.Value, $"{blockPath}.captures.{capture.Id}", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
             }
+            // ADD THIS AFTER THE FOREACH LOOP:
+            if (block.Captures.Count == 0)
+                errs.Add(new("RULE_REF_NO_CAPTURES", "Reference block must contain at least one capture variable.", blockPath));
         }
 
         if (rule.Entry is null || !ContainsEnabledCondition(rule.Entry)) errs.Add(new("RULE_009", "entry must contain at least one enabled condition.", "entry"));
@@ -114,13 +140,149 @@ public static class RuleDefinitionValidator
         return new ValidationResult(errs, warn, skip);
     }
 
-    // --- (Keep ValidateNode, ContainsEnabledCondition, CollectNamedGroups, Walk, ValidateCondition, ValidateExpr, TryCompare exactly as they are from the previous step) ---
-    // I have omitted them here to save space, but they are identical to the version you just compiled.
-    private static void ValidateNode(Node node, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule) { /* same as before */ }
-    private static bool ContainsEnabledCondition(ConditionGroup? g) { return true; /* same as before */ }
-    private static void CollectNamedGroups(ConditionGroup? g, Dictionary<string, ConditionGroup> acc, List<ValidationError> errs) { /* same as before */ }
-    private static void Walk(ConditionGroup? g, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule) { /* same as before */ }
-    private static void ValidateCondition(Condition c, string path, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule) { /* same as before */ }
-    private static void ValidateExpr(ValueExpression e, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule) { /* same as before */ }
-    private static bool TryCompare(Timeframe a, Timeframe b, out int result) { result = 0; return false; }
+    private static void ValidateNode(Node node, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule)
+    {
+        if (node is ConditionGroup g) Walk(g, path, depth, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+        else if (node is Condition c) ValidateCondition(c, path, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+        else errs.Add(new("RULE_NODE_TYPE", "Unknown node type in trigger.", path));
+    }
+
+    private static bool ContainsEnabledCondition(ConditionGroup? g)
+    {
+        if (g is null || !g.Enabled) return false;
+        foreach (var c in g.Children)
+        {
+            if (c is Condition cond && cond.Enabled) return true;
+            if (c is ConditionGroup grp && ContainsEnabledCondition(grp)) return true;
+        }
+        return false;
+    }
+
+    private static void CollectNamedGroups(ConditionGroup? g, Dictionary<string, ConditionGroup> acc, List<ValidationError> errs)
+    {
+        if (g is null) return;
+        if (g.Name is { Length: > 0 } n)
+        {
+            if (!NameRegex.IsMatch(n)) errs.Add(new("RULE_019", $"Invalid group name '{n}'.", "group.name"));
+            else if (!acc.TryAdd(n, g)) errs.Add(new("RULE_019", $"Duplicate group name '{n}'.", "group.name"));
+        }
+        foreach (var c in g.Children)
+            if (c is ConditionGroup grp) CollectNamedGroups(grp, acc, errs);
+    }
+
+    private static void Walk(ConditionGroup? g, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule)
+    {
+        if (g is null) return;
+        if (depth > MaxGroupDepth) { errs.Add(new("RULE_017", "Group depth exceeds 10.", path)); return; }
+        if (g.Name is { Length: > 0 } n && !NameRegex.IsMatch(n)) errs.Add(new("RULE_019", $"Invalid group name '{n}'.", path + ".name"));
+
+        bool sawDisabled = false;
+        foreach (var c in g.Children)
+        {
+            if (c is Condition cond)
+            {
+                if (!cond.Enabled) { sawDisabled = true; continue; }
+                ValidateCondition(cond, path + ".condition", errs, warn, skip, paramNames, referenceNames, lookup, rule);
+            }
+            else if (c is ConditionGroup grp)
+            {
+                Walk(grp, path + ".group", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+            }
+        }
+        if (sawDisabled && g.Enabled) warn.Add(new("RULE_023", "Disabled condition inside an enabled group.", path));
+    }
+
+    private static void ValidateCondition(Condition c, string path, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule)
+    {
+        ValidateExpr(c.Left, path + ".left", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+        ValidateExpr(c.Right, path + ".right", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+
+        if (c.Operator is Operator.OpenedAbove or Operator.OpenedBelow or Operator.ClosedAbove or Operator.ClosedBelow)
+        {
+            if (c.Left is not FieldExpression f) errs.Add(new("RULE_031", $"{c.Operator} left side must be a field expression.", path + ".left"));
+            else if (c.Operator is Operator.OpenedAbove or Operator.OpenedBelow && f.Field != Field.Open) errs.Add(new("RULE_031", $"{c.Operator} left field must be Open.", path + ".left.field"));
+            else if (c.Operator is Operator.ClosedAbove or Operator.ClosedBelow && f.Field != Field.Close) errs.Add(new("RULE_031", $"{c.Operator} left field must be Close.", path + ".left.field"));
+        }
+    }
+
+    private static void ValidateExpr(ValueExpression e, string path, int depth, List<ValidationError> errs, List<ValidationError> warn, List<string> skip, HashSet<string> paramNames, HashSet<string> referenceNames, IInstrumentLookup? lookup, RuleDefinition rule)
+    {
+        if (depth > MaxExprDepth) { errs.Add(new("RULE_018", "Expression recursion depth exceeds 10.", path)); return; }
+
+        switch (e)
+        {
+            case FieldExpression f:
+                if (f.Offset < 0) errs.Add(new("RULE_016", "offset must be >= 0.", path + ".offset"));
+                if (f.Field == Field.OI && lookup is not null && rule.InstrumentToken is { } tok1 && lookup.TryGet(tok1, out var info1) && info1.InstrumentType != InstrumentType.Future && info1.InstrumentType != InstrumentType.Option)
+                    warn.Add(new("RULE_026", "OI used on equity/index — value always 0.", path));
+                if (f.Field == Field.Volume && lookup is not null && rule.InstrumentToken is { } tok2 && lookup.TryGet(tok2, out var info2) && info2.InstrumentType == InstrumentType.Index)
+                    warn.Add(new("RULE_027", "Volume used on index — value always 0.", path));
+                break;
+
+            case NumberExpression: break;
+
+            case ParameterExpression p:
+                if (!paramNames.Contains(p.Name)) errs.Add(new("RULE_011", $"Parameter '{p.Name}' not declared.", path + ".name"));
+                break;
+
+            case ReferenceExpression refExpr:
+                if (!referenceNames.Contains(refExpr.Id)) errs.Add(new("RULE_REF_MISSING", $"Reference '{refExpr.Id}' is used but not declared.", path + ".id"));
+                // ADD THIS:
+                var validFields = new[] { "Value", "High", "Low", "Open", "Close", "AgeInBars" };
+                if (!validFields.Contains(refExpr.Field))
+                    errs.Add(new("RULE_REF_FIELD", $"Invalid reference field '{refExpr.Field}'.", path + ".field"));
+                break;
+
+            case IndicatorExpression ind:
+                if (!Enum.IsDefined(typeof(IndicatorKind), ind.Indicator)) errs.Add(new("RULE_014", $"Indicator '{ind.Indicator}' not registered.", path + ".indicator"));
+                // ADD THIS:
+                if (ind.Params != null)
+                {
+                    foreach (var p in ind.Params)
+                    {
+                        if (p.Value <= 0)
+                            errs.Add(new("RULE_IND_PERIOD", $"Indicator parameter '{p.Key}' must be greater than zero.", path + ".params." + p.Key));
+                    }
+                }
+                if (ind.Offset < 0) errs.Add(new("RULE_016", "offset must be >= 0.", path + ".offset"));
+
+                if (ind.Indicator == IndicatorKind.Count)
+                {
+                    if (ind.Lookback <= 0) errs.Add(new("RULE_COUNT_LOOKBACK", "Count lookback must be positive.", path + ".lookback"));
+                    if (ind.Source is not null || ind.Params is { Count: > 0 } || ind.Output is not (null or "Value"))
+                        errs.Add(new("RULE_COUNT_OPTIONS", "Count uses predicate, lookback, streak and output Value.", path));
+
+                    if (ind.Predicate is null || !ind.Predicate.Enabled || ind.Predicate.Left is null || ind.Predicate.Right is null)
+                        errs.Add(new("RULE_COUNT_PREDICATE", "Count requires an enabled condition.", path + ".predicate"));
+                    else
+                    {
+                        ValidateExpr(ind.Predicate.Left, path + ".predicate.left", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                        ValidateExpr(ind.Predicate.Right, path + ".predicate.right", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                        if (!Enum.IsDefined(ind.Predicate.Operator)) errs.Add(new("RULE_COUNT_OPERATOR", "Invalid Count condition operator.", path + ".predicate.operator"));
+
+                        var op = ind.Predicate.Operator;
+                        if (op is Operator.OpenedAbove or Operator.OpenedBelow or Operator.ClosedAbove or Operator.ClosedBelow)
+                        {
+                            var field = op is Operator.OpenedAbove or Operator.OpenedBelow ? Field.Open : Field.Close;
+                            if (ind.Predicate.Left is not FieldExpression f || f.Field != field)
+                                errs.Add(new("RULE_031", "Count Opened/Closed condition requires the matching left field.", path + ".predicate.left"));
+                        }
+                    }
+                }
+
+                if (ind.Source is not null) ValidateExpr(ind.Source, path + ".source", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                break;
+
+            case CalculationExpression calc:
+                ValidateExpr(calc.Left, path + ".left", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                ValidateExpr(calc.Right, path + ".right", depth + 1, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+                break;
+        }
+    }
+
+    private static bool TryCompare(Timeframe a, Timeframe b, out int result)
+    {
+        try { result = a.CompareTo(b); return true; }
+        catch { result = 0; return false; }
+    }
 }

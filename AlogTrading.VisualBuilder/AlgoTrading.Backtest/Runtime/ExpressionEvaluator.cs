@@ -55,7 +55,9 @@ public sealed class ExpressionEvaluator
 
                     if (re.Field == "AgeInBars")
                     {
-                        value = 0m; return true;
+                        // Current base index - the base index when it was captured
+                        value = baseIndex - refVal.CapturedBarIndex;
+                        return true;
                     }
 
                     var bar = refVal.Candle;

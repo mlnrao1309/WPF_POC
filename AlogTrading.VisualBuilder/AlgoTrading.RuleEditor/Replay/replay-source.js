@@ -18,7 +18,10 @@
 
  function timestamp(value,label){
 
-  requireValue(typeof value==='string'&&/(Z|[+-]\d{2}:\d{2})$/i.test(value),label+' has no explicit timezone.');
+  requireValue(typeof value==='string',label+' is not a valid timestamp.');
+
+  // Saved engine timestamps without an offset are IST.
+  if(!/(Z|[+-]\d{2}:\d{2})$/i.test(value))value+='+05:30';
 
   const ms=Date.parse(value);requireValue(Number.isFinite(ms),label+' is not a valid timestamp.');return ms/1000;
 
@@ -72,7 +75,7 @@
  function indicatorPanel(indicator,output){
   if(indicator==='Supertrend'&&output==='Direction')return 'data';
   if(['Rsi','Stochastic','Mfi','Adx'].includes(indicator))return 'oscillator';
-  if(['Obv','Adl','VolumeSma','Roc','Momentum','Trix','Cci','Macd'].includes(indicator))return 'data';
+  if(['Atr','Obv','Adl','VolumeSma','Roc','Momentum','Trix','Cci','Macd'].includes(indicator))return 'data';
   return 'price';
  }
  function readIndicators(artifacts,datasets,frames){

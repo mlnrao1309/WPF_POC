@@ -128,6 +128,7 @@ public sealed class ExpressionEditorControl : UserControl
                 _model.Offset = 0; _model.Timeframe = null;
                 var refNames = _referenceNamesProvider();
                 if (refNames.Count > 0 && string.IsNullOrEmpty(_model.ReferenceId)) _model.ReferenceId = refNames[0];
+                _model.ReferenceField = "Value"; // <-- Force default to Value
                 break;
             case "indicator":
                 _model.Offset = 0; _model.Timeframe = null; _model.Indicator ??= "Sma";
@@ -212,8 +213,8 @@ public sealed class ExpressionEditorControl : UserControl
         panel.Children.Add(new TextBlock { Text = ".", Margin = new Thickness(4, 4, 4, 0) });
 
         var cbField = new ComboBox { Width = 90 };
-        foreach (var f in new[] { "High", "Low", "Open", "Close", "Value", "AgeInBars" }) cbField.Items.Add(f);
-        cbField.SelectedItem = _model.ReferenceField ?? "High";
+        foreach (var f in new[] { "Value", "High", "Low", "Open", "Close", "AgeInBars" }) cbField.Items.Add(f);
+        cbField.SelectedItem = _model.ReferenceField ?? "Value";
         cbField.SelectionChanged += (s, e) => { if (cbField.SelectedItem is string v) { _model.ReferenceField = v; _onChanged(); } };
         panel.Children.Add(cbField);
 

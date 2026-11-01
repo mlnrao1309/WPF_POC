@@ -2,4 +2,4 @@
 
 namespace AlgoTrading.Backtest.Runtime;
 
-public sealed record ReferenceValue(Candle Candle, decimal? CapturedValue);
+public sealed record ReferenceValue(Candle Candle, decimal? CapturedValue, int CapturedBarIndex);

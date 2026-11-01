@@ -282,6 +282,10 @@ button.trade:disabled{cursor:default;opacity:.55;}
 .indicator-control input[type="color"]{width:1.8rem;height:1.5rem;padding:.1rem;border:1px solid var(--line);border-radius:.3rem;background:var(--panel);cursor:pointer;}
 [hidden]{display:none!important}
 #snapshotError{color:var(--neg);margin-top:.6rem;overflow-wrap:anywhere}
+.trade-pagination{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:.5rem;padding:.75rem;border-top:1px solid var(--line);}
+.trade-pagination button{font:inherit;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:.5rem;padding:.35rem .65rem;cursor:pointer;}
+.trade-pagination button:disabled{opacity:.4;cursor:default;}
+.trade-pagination span{font-size:11px;color:var(--muted);}
 </style>
 <script src="replay-source.js"></script>
 </head>
@@ -394,6 +398,11 @@ button.trade:disabled{cursor:default;opacity:.55;}
       <div class="trades-scroll">
         <div class="trades-list" id="tradesList" tabindex="0" role="region" aria-label="Trades. Use arrow keys, Page Up, Page Down, Home and End to navigate."></div>
       </div>
+      <nav class="trade-pagination" aria-label="Trade pages">
+        <button type="button" id="tradesPrev" disabled>Previous</button>
+        <span id="tradesPage" role="status" aria-live="polite">Page 0 of 0</span>
+        <button type="button" id="tradesNext" disabled>Next</button>
+      </nav>
     </aside>
   </div>
 </div>
@@ -409,6 +418,8 @@ button.trade:disabled{cursor:default;opacity:.55;}
   let equity = [];
   let startCapital = 50000;
   let filter = 'all';
+  const tradePageSize = 5;
+  let tradePage = 0;
 
   // candles + indicators
   let candles = null;          // [{t,o,h,l,c}]
@@ -542,6 +553,21 @@ button.trade:disabled{cursor:default;opacity:.55;}
   /* =========================================================
      DATA PROCESSING
      ========================================================= */
+  function fixedIndicatorColor(series, indicators) {
+    const definition = series.definition;
+    if (['PivotPointsClassic','PivotPointsCamarilla'].includes(definition.indicator)) {
+      if (/^R[1-5]$/i.test(definition.output)) return '#ff0000';
+      if (/^S[1-5]$/i.test(definition.output)) return '#00ff00';
+      if (/^(PP|P|Pivot)$/i.test(definition.output)) return '#ffffff';
+    }
+    if (definition.indicator === 'Ema') {
+      const fastest = Math.min(...indicators.filter(s=>s.definition.indicator==='Ema')
+        .map(s=>Number(s.definition.parameters?.period)).filter(Number.isFinite));
+      return Number(definition.parameters?.period) === fastest ? '#0000ff' : '#ff0000';
+    }
+    return null;
+  }
+
   function processData(json) {
     const config = JSON.parse(json.configurationJson);
     const rawTrades = JSON.parse(json.tradesJson || '[]');
@@ -583,15 +609,18 @@ button.trade:disabled{cursor:default;opacity:.55;}
     }));
 
     /* ---------------- Candles + indicators ---------------- */
-    stopReplay(); selectedTrade = null;
+    stopReplay(); selectedTrade = null; tradePage = 0;
     const replayModel = window.ReplaySource.fromSavedRun(json);
     candles = replayModel.frames.map(f=>({t:f.time*1000,o:f.open,h:f.high,l:f.low,c:f.close}));
-    strategySeries = replayModel.indicators.map((series,i)=>({...series,color:palette[i%palette.length],visible:true}));
+    strategySeries = replayModel.indicators.map((series,i)=>({
+      ...series,color:fixedIndicatorColor(series,replayModel.indicators) || palette[i%palette.length],visible:false
+    }));
     const picker=document.getElementById('strategyIndicators'); picker.replaceChildren();
     strategySeries.forEach(series=>{
       const label=document.createElement('label'), input=document.createElement('input');
-      input.type='checkbox';input.checked=true; input.onchange=()=>{series.visible=input.checked;draw();};
+      input.type='checkbox';input.checked=series.visible; input.onchange=()=>{series.visible=input.checked;draw();};
       const color=document.createElement('input');color.type='color';color.value=series.color;
+      color.disabled=fixedIndicatorColor(series,replayModel.indicators)!==null;
       color.setAttribute('aria-label','Colour for '+series.label);color.title='Change '+series.label+' colour';
       color.oninput=()=>{series.color=color.value;label.style.color=series.color;draw();};
       label.style.color=series.color;label.append(input,document.createTextNode(series.label));
@@ -712,10 +741,19 @@ button.trade:disabled{cursor:default;opacity:.55;}
       return true;
     }).slice().reverse();
 
-    document.getElementById('tradesList').innerHTML = list.map(rowHTML).join('');
+    const pageCount = Math.ceil(list.length / tradePageSize);
+    tradePage = Math.max(0, Math.min(tradePage, pageCount - 1));
+    document.getElementById('tradesList').innerHTML = list.slice(tradePage * tradePageSize, (tradePage + 1) * tradePageSize).map(rowHTML).join('');
+    document.getElementById('tradesList').scrollTop = 0;
+    document.getElementById('tradesPage').textContent = 'Page ' + (pageCount ? tradePage + 1 : 0) + ' of ' + pageCount;
+    document.getElementById('tradesPrev').disabled = tradePage === 0;
+    document.getElementById('tradesNext').disabled = tradePage + 1 >= pageCount;
     document.getElementById('tradeCount').textContent = list.length;
     requestAnimationFrame(sizeTradeList);
   }
+
+  document.getElementById('tradesPrev').onclick=()=>{tradePage--;renderTrades();};
+  document.getElementById('tradesNext').onclick=()=>{tradePage++;renderTrades();};
 
   document.getElementById('tradesList').addEventListener('click', event => {
     const button=event.target.closest('button[data-trade-index]');
@@ -747,7 +785,7 @@ button.trade:disabled{cursor:default;opacity:.55;}
     if(event.key==='Home')index=0;
     else if(event.key==='End')index=rows.length-1;
     else if(index<0)index=event.key==='ArrowUp'||event.key==='PageUp'?rows.length-1:0;
-    else index=Math.max(0,Math.min(rows.length-1,index+({ArrowDown:1,ArrowUp:-1,PageDown:8,PageUp:-8}[event.key])));
+    else index=Math.max(0,Math.min(rows.length-1,index+({ArrowDown:1,ArrowUp:-1,PageDown:tradePageSize,PageUp:-tradePageSize}[event.key])));
     rows[index].focus({preventScroll:true});
     const top=rows[index].offsetTop,bottom=top+rows[index].offsetHeight;
     if(top<list.scrollTop)list.scrollTop=top;
@@ -760,6 +798,7 @@ button.trade:disabled{cursor:default;opacity:.55;}
     const b = e.target.closest('button');
     if (!b) return;
     filter = b.dataset.f;
+    tradePage = 0;
     Array.from(b.parentElement.children).forEach(x => x.classList.toggle('is-active', x === b));
     renderTrades();
   });
@@ -885,15 +924,12 @@ button.trade:disabled{cursor:default;opacity:.55;}
     const n = v1 - v0 + 1;
     const slot = iw / n;
 
-    // ---- y-range ----
+    // Scale visible candles independently of distant overlay levels.
     let lo = Infinity, hi = -Infinity;
     for (let i = v0; i <= v1; i++) {
       const k = candles[i];
       if (k.l < lo) lo = k.l;
       if (k.h > hi) hi = k.h;
-      strategySeries.filter(s=>s.visible&&s.panel==='price').forEach(s=>{
-        const v=s.values[i];if(Number.isFinite(v)){lo=Math.min(lo,v);hi=Math.max(hi,v);}
-      });
     }
     const padV = (hi - lo) * 0.09 || 1;
     lo -= padV; hi += padV;
@@ -930,21 +966,30 @@ button.trade:disabled{cursor:default;opacity:.55;}
     if (dn) svg.appendChild(sEl('path', { d: dn, fill: '#ff5e7d', stroke: '#ff5e7d', 'stroke-width': 1, opacity: .88 }));
     if (up) svg.appendChild(sEl('path', { d: up, fill: '#2fdc9f', stroke: '#2fdc9f', 'stroke-width': 1, opacity: .88 }));
 
-    // ---- EMA overlays ----
-    function linePath(arr, color) {
+    // Clip price overlays so off-screen levels cannot cover other panes.
+    const clip = sEl('clipPath', { id: 'price-overlay-clip' });
+    clip.appendChild(sEl('rect', { x: P.l, y: P.t, width: iw, height: priceH }));
+    svg.appendChild(clip);
+    function linePath(arr, color, pivot = false) {
       let d = '', started = false;
       for (let i = v0; i <= v1; i++) {
         const v = arr[i];
-        if (v == null) { started = false; continue; }
+        if (!Number.isFinite(v)) { started = false; continue; }
+        // Pivot levels are horizontal bar segments; never join successive periods.
+        if (pivot) {
+          d += 'M' + (X(i) - slot / 2).toFixed(1) + ' ' + Y(v).toFixed(1) + 'H' + (X(i) + slot / 2).toFixed(1) + ' ';
+          continue;
+        }
         d += (started ? 'L' : 'M') + X(i).toFixed(1) + ' ' + Y(v).toFixed(1) + ' ';
         started = true;
       }
       if (d) svg.appendChild(sEl('path', {
-        d, fill: 'none', stroke: color, 'stroke-width': 1.6,
+        d, fill: 'none', stroke: color, 'stroke-width': 1.6, 'clip-path': 'url(#price-overlay-clip)',
         'stroke-linejoin': 'round', 'stroke-linecap': 'round', opacity: .95
       }));
     }
-    strategySeries.filter(s=>s.visible&&s.panel==='price').forEach(s=>linePath(s.values,s.color));
+    strategySeries.filter(s=>s.visible&&s.panel==='price').forEach(s=>linePath(s.values,s.color,
+      ['PivotPointsClassic','PivotPointsCamarilla'].includes(s.definition.indicator)));
 
     // ---- trade markers (only when zoomed in enough) ----
     if (slot > 3.2) {
