@@ -5,7 +5,9 @@ public sealed class EditorReferenceBlock
     public string Name { get; set; } = "RefBlock";
     public string Timeframe { get; set; } = "15m";
     public EditorNode Trigger { get; set; } = new() { Kind = "group", Logic = "All", Enabled = true };
-    public EditorNode? ClearOn { get; set; }
+    //public EditorNode? ClearOn { get; set; }
+    // NEW: Simple toggle instead of a complex ClearOn condition
+    public bool OverwriteOnTrigger { get; set; } = false;
     public List<EditorReferenceCapture> Captures { get; set; } = new();
 }
 

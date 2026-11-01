@@ -20,4 +20,7 @@ public sealed class BacktestEngineOptions
     public Guid? RunId { get; init; }
     public IBarSeries? DailySeries { get; init; }
     public IReadOnlyDictionary<Timeframe, IBarSeries>? PreparedSeries { get; init; }
+
+    // NEW: Toggle for detailed CSV tracing
+    public bool EnableTracing { get; init; } = false;
 }

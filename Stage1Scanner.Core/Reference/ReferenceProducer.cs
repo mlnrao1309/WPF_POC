@@ -8,43 +8,32 @@ public sealed record ReferenceCaptureDef(string Id, Operand Value);
 public sealed class ReferenceProducer
 {
     public ReferenceProducer(
-        string id,
         string blockName,
         IRuleExpression trigger,
         Timeframe timeframe,
-        IReadOnlyList<ReferenceCaptureDef> captures, // <-- NEW
-        IRuleExpression? clearOn = null)
+        IReadOnlyList<ReferenceCaptureDef> captures,
+        bool overwriteOnTrigger) // <-- NEW
     {
-        //Id = id ?? throw new ArgumentNullException(nameof(id));
         BlockName = blockName;
         Trigger = trigger ?? throw new ArgumentNullException(nameof(trigger));
         Timeframe = timeframe;
         Captures = captures ?? new List<ReferenceCaptureDef>();
-        ClearOn = clearOn;
+        OverwriteOnTrigger = overwriteOnTrigger;
     }
-    //public string Id { get; }
 
     public string BlockName { get; }
     public IRuleExpression Trigger { get; }
     public Timeframe Timeframe { get; }
     public IReadOnlyList<ReferenceCaptureDef> Captures { get; }
-    public IRuleExpression? ClearOn { get; }
+    public bool OverwriteOnTrigger { get; }
 
     public void Prepare(Instruments instruments, EvaluationContext context)
     {
         // Check if any of the captures currently exist
         var anyExists = Captures.Any(c => instruments.References.TryGet(c.Id, out _));
 
-        if (anyExists)
-        {
-            if (ClearOn is null) return;
-
-            var clear = ClearOn.Evaluate(context);
-            if (clear.Truth != RuleTruth.True) return;
-
-            foreach (var c in Captures) instruments.References.Clear(c.Id);
-            // Fall through to re-capture
-        }
+        // If they exist, and we are NOT set to overwrite, do nothing.
+        if (anyExists && !OverwriteOnTrigger) return;
 
         var trigger = Trigger.Evaluate(context);
         if (trigger.Truth != RuleTruth.True) return;
@@ -62,7 +51,7 @@ public sealed class ReferenceProducer
             decimal? capturedValue = valResult.HasValue ? valResult.Value : null;
 
             instruments.References.Set(new Reference(
-                capture.Id, // <-- The specific variable name
+                capture.Id,
                 Timeframe,
                 bar.OpenTime,
                 bar.CloseTime,

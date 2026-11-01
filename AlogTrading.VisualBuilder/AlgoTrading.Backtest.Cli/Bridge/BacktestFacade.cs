@@ -145,6 +145,7 @@ public sealed class BacktestFacade : IBacktestFacade
         // 4. Engine options.
         var options = new BacktestEngineOptions
         {
+            EnableTracing = true, // <--- Set this to true
             SignalObserver = observation => { if (recordSignals) signalObservations.Add(observation); },
             InitialCapital = req.TradedCapital,
             LossBasis = req.LossBasis,

@@ -14,6 +14,7 @@ public partial class ReferencesTab : UserControl
 
     public ReferencesTab() => InitializeComponent();
     public void Configure(MainWindow owner) => _owner = owner;
+
     public void Bind(EditorStrategy? strategy)
     {
         _references = strategy is null ? new() : ConditionTreeService.LoadReferences(strategy.Rule);
@@ -60,12 +61,61 @@ public partial class ReferencesTab : UserControl
 
             // Trigger
             layout.Children.Add(new TextBlock { Text = "Trigger (When to capture):", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 4, 0, 4) });
+
+            if (block.Trigger.Kind != "group")
+            {
+                var legacy = block.Trigger;
+                block.Trigger = new EditorNode { Kind = "group", Logic = "All", Enabled = true };
+                block.Trigger.Children.Add(legacy);
+            }
+
             var triggerCtrl = new ConditionGroupControl(
                 model: block.Trigger, depth: 0, isRoot: true,
                 parameterNamesProvider: () => _owner?.CurrentParameterNames() ?? Array.Empty<string>(),
                 referenceNamesProvider: () => _owner?.CurrentReferenceNames() ?? Array.Empty<string>(),
                 onChanged: RaiseChanged, onDelete: null);
             layout.Children.Add(triggerCtrl);
+
+            // --- NEW: CLEAR ON TOGGLE ---
+            //var clearOnPanel = new StackPanel { Orientation = Orientation.Vertical, Margin = new Thickness(0, 12, 0, 0) };
+            //var clearOnToggle = new CheckBox
+            //{
+            //    Content = "Clear variable (Reset on condition)",
+            //    IsChecked = block.ClearOn != null,
+            //    FontWeight = FontWeights.SemiBold,
+            //    Margin = new Thickness(0, 0, 0, 4)
+            //};
+            //clearOnToggle.Checked += (s, e) => { if (block.ClearOn == null) block.ClearOn = new EditorNode { Kind = "group", Logic = "All", Enabled = true }; RebuildUI(); RaiseChanged(); };
+            //clearOnToggle.Unchecked += (s, e) => { block.ClearOn = null; RebuildUI(); RaiseChanged(); };
+            //clearOnPanel.Children.Add(clearOnToggle);
+            //if (block.ClearOn != null)
+            //{
+            //    if (block.ClearOn.Kind != "group")
+            //    {
+            //        var legacy = block.ClearOn;
+            //        block.ClearOn = new EditorNode { Kind = "group", Logic = "All", Enabled = true };
+            //        block.ClearOn.Children.Add(legacy);
+            //    }
+            //    var clearOnCtrl = new ConditionGroupControl(
+            //        model: block.ClearOn, depth: 0, isRoot: true,
+            //        parameterNamesProvider: () => _owner?.CurrentParameterNames() ?? Array.Empty<string>(),
+            //        referenceNamesProvider: () => _owner?.CurrentReferenceNames() ?? Array.Empty<string>(),
+            //        onChanged: RaiseChanged, onDelete: null);
+            //    clearOnPanel.Children.Add(clearOnCtrl);
+            //}
+            //layout.Children.Add(clearOnPanel);
+
+            var overwriteToggle = new CheckBox
+            {
+                Content = "Overwrite variable if trigger fires again (Uncheck to lock first occurrence)",
+                IsChecked = block.OverwriteOnTrigger,
+                FontWeight = FontWeights.SemiBold,
+                Margin = new Thickness(0, 12, 0, 4)
+            };
+            overwriteToggle.Checked += (s, e) => { block.OverwriteOnTrigger = true; RaiseChanged(); };
+            overwriteToggle.Unchecked += (s, e) => { block.OverwriteOnTrigger = false; RaiseChanged(); };
+            layout.Children.Add(overwriteToggle);
+
 
             // Captures
             layout.Children.Add(new TextBlock { Text = "Captures (Variables to assign):", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 12, 0, 4) });

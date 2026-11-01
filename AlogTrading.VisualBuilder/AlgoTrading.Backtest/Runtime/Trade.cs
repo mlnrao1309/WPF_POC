@@ -28,4 +28,7 @@ public sealed class Trade
     public int BarsHeld { get; init; }
     public decimal DaysHeld { get; init; }
     public ExitReason ExitReason { get; init; }
+
+    // NEW: Capture the variable values at the time of entry
+    public Dictionary<string, ReferenceValue> CapturedReferences { get; init; } = new();
 }

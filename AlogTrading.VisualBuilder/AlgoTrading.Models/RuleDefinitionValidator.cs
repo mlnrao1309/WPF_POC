@@ -43,8 +43,8 @@ public static class RuleDefinitionValidator
             else
                 ValidateNode(block.Trigger, $"{blockPath}.trigger", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
 
-            if (block.ClearOn is not null)
-                ValidateNode(block.ClearOn, $"{blockPath}.clearOn", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
+            //if (block.ClearOn is not null)
+            //    ValidateNode(block.ClearOn, $"{blockPath}.clearOn", 0, errs, warn, skip, paramNames, referenceNames, lookup, rule);
 
             foreach (var capture in block.Captures)
             {

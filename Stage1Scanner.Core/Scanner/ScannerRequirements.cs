@@ -72,10 +72,10 @@ public static class ScannerRequirementAnalyzer
 
             Collect(scanner, producer.Trigger, requirements);
 
-            if (producer.ClearOn is not null)
-            {
-                Collect(scanner, producer.ClearOn, requirements);
-            }
+            //if (producer.ClearOn is not null)
+            //{
+            //    Collect(scanner, producer.ClearOn, requirements);
+            //}
         }
 
         ValidateReferencedReferenceIds(

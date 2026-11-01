@@ -18,6 +18,9 @@ internal sealed class PositionState
     public decimal MAE { get; set; }
     public decimal MFE { get; set; }
 
+    // NEW: Dictionary to hold variables at the time of entry
+    public Dictionary<string, ReferenceValue> EntryReferences { get; set; } = new();
+
     public void Reset()
     {
         IsOpen = false;
@@ -33,6 +36,7 @@ internal sealed class PositionState
         TargetRuleGroup = null;
         MAE = 0m;
         MFE = 0m;
+        EntryReferences = new Dictionary<string, ReferenceValue>(); // NEW
     }
 
     public void UpdateExcursions(decimal high, decimal low)

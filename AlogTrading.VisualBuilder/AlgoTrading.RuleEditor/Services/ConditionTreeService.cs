@@ -89,9 +89,9 @@ public static class ConditionTreeService
                 if (el.TryGetProperty("trigger", out var trig))
                     block.Trigger = NodeFromJson(trig, "group") ?? new EditorNode { Kind = "group", Logic = "All" };
 
-                if (el.TryGetProperty("clearOn", out var clr) && clr.ValueKind != JsonValueKind.Null)
-                    block.ClearOn = NodeFromJson(clr, "group");
-
+                //if (el.TryGetProperty("clearOn", out var clr) && clr.ValueKind != JsonValueKind.Null)
+                //    block.ClearOn = NodeFromJson(clr, "group");
+                block.OverwriteOnTrigger = GetBool(el, "overwriteOnTrigger", false);
                 // Load new format captures (if they exist)
                 if (el.TryGetProperty("captures", out var caps) && caps.ValueKind == JsonValueKind.Array)
                 {
@@ -124,7 +124,7 @@ public static class ConditionTreeService
             {
                 var blockObj = new JsonObject { ["name"] = block.Name, ["timeframe"] = block.Timeframe };
                 if (block.Trigger is not null) blockObj["trigger"] = NodeToJson(block.Trigger);
-                if (block.ClearOn is not null) blockObj["clearOn"] = NodeToJson(block.ClearOn);
+                if (block.OverwriteOnTrigger) blockObj["overwriteOnTrigger"] = block.OverwriteOnTrigger;
 
                 var capsArr = new JsonArray();
                 foreach (var cap in block.Captures)

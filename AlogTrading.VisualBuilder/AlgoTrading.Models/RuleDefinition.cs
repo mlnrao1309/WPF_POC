@@ -32,7 +32,8 @@ public sealed class ReferenceBlock
     public string Name { get; set; } = string.Empty; // Optional, for UI readability
     public Timeframe Timeframe { get; set; }
     public Node Trigger { get; set; } = null!;
-    public Node? ClearOn { get; set; }
+    // NEW: Simple toggle instead of a complex ClearOn condition
+    public bool OverwriteOnTrigger { get; set; } = false;
     public List<ReferenceCapture> Captures { get; set; } = new();
 }
 
