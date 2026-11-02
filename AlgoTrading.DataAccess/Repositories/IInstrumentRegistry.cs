@@ -7,6 +7,7 @@ namespace AlgoTrading.DataAccess.Repositories
     public interface IInstrumentRegistry
     {
         void Initialize(RuntimeSnapshot snapshot);
+        void AddMissing(RuntimeSnapshot snapshot);
         Instruments? GetByToken(long token);
         IReadOnlyCollection<Instruments> GetAll();
         
@@ -43,6 +44,23 @@ namespace AlgoTrading.DataAccess.Repositories
                 _instruments = new Dictionary<long, Instruments>(snapshot.Instruments);
                 _indicatorData = indicators;
                 _indicatorCandles.Clear();
+            }
+        }
+
+        public void AddMissing(RuntimeSnapshot snapshot)
+        {
+            // Prepare indicator keys before touching the live registry.
+            var additions = new InstrumentRegistry();
+            additions.Initialize(snapshot);
+            lock (_gate)
+            {
+                foreach (var entry in additions._instruments)
+                {
+                    if (!_instruments.TryAdd(entry.Key, entry.Value)) continue;
+                    string prefix = entry.Key.ToString(System.Globalization.CultureInfo.InvariantCulture) + "_";
+                    foreach (var indicator in additions._indicatorData.Where(x => x.Key.StartsWith(prefix, StringComparison.Ordinal)))
+                        _indicatorData.Add(indicator.Key, indicator.Value);
+                }
             }
         }
 

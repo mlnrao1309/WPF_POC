@@ -29,7 +29,8 @@ public class WarmupEtlRepository
         _connectionString = connectionString;
     }
 
-    public async Task<IEnumerable<RawEtlCandleDto>> FetchOneYearHistoryAsync(string timeframe, CancellationToken cancellationToken = default)
+    public virtual async Task<IEnumerable<RawEtlCandleDto>> FetchOneYearHistoryAsync(string timeframe, CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? instrumentTokens = null)
     {
         using var connection = new SqlConnection(_connectionString);
 
@@ -52,6 +53,7 @@ public class WarmupEtlRepository
             WHERE b.TimeFrame = @TimeFrame 
               AND b.TimeStamp >= @OneYearAgo
               AND (b.ExpiresOn IS NULL OR b.ExpiresOn >= @MarketDate)
+              AND (@AllInstruments = 1 OR b.InstrumentToken IN @InstrumentTokens)
             ORDER BY b.InstrumentToken, b.TimeStamp ASC;
         ";
 
@@ -60,7 +62,9 @@ public class WarmupEtlRepository
         {
             TimeFrame = timeframe,
             OneYearAgo = oneYearAgo,
-            MarketDate = marketDate
+            MarketDate = marketDate,
+            AllInstruments = instrumentTokens == null,
+            InstrumentTokens = instrumentTokens?.ToArray() ?? Array.Empty<int>()
         }, commandTimeout: 120, cancellationToken: cancellationToken));
     }
 }

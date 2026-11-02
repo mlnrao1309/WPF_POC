@@ -1,4 +1,5 @@
 using AlgoTrading.DataAccess.FlatFiles;
+using AlgoTrading.DataAccess.Runtime;
 using Stage1Scanner.Core.Market;
 using AlgoTrading.Models;
 using AlgoTrading.DataAccess.Repositories;
@@ -18,7 +19,8 @@ public class WarmupEtlService
         _warmupRepository = warmupRepository;
     }
 
-    public async Task RunWarmupEtlAsync(string scannerFolder, string outputFolder, CancellationToken cancellationToken = default, ExchangeCalendarSnapshot? calendar = null)
+    public async Task<RuntimeSnapshot> RunWarmupEtlAsync(string scannerFolder, string outputFolder, CancellationToken cancellationToken = default, ExchangeCalendarSnapshot? calendar = null,
+        IReadOnlyCollection<int>? instrumentTokens = null)
     {
         Console.WriteLine("[ETL] Starting Warmup ETL...");
 
@@ -49,7 +51,7 @@ public class WarmupEtlService
 
             // Fetch raw data from SQL
             cancellationToken.ThrowIfCancellationRequested();
-            var rawData = await _repository.FetchOneYearHistoryAsync(tfStr, cancellationToken);
+            var rawData = await _repository.FetchOneYearHistoryAsync(tfStr, cancellationToken, instrumentTokens);
             var coreTimeframe = ParseTimeframe(tfStr);
 
             // Group data by Instrument to build the Instruments object
@@ -127,6 +129,18 @@ public class WarmupEtlService
         if (equitySnapshot.Instruments.Count + foSnapshot.Instruments.Count == 0)
             throw new InvalidDataException("Warmup returned no instruments.");
 
+        // A targeted warmup must be complete before publishing either snapshot file.
+        if (instrumentTokens != null)
+            foreach (int token in instrumentTokens)
+            {
+                var instrument = equitySnapshot.Instruments.GetValueOrDefault(token)
+                    ?? foSnapshot.Instruments.GetValueOrDefault(token)
+                    ?? throw new InvalidDataException($"No warmup history for instrument {token}.");
+                foreach (string tf in timeframes)
+                    if (!instrument.TryGetCandles(ParseTimeframe(tf), out _))
+                        throw new InvalidDataException($"Missing warmup history for {instrument.Symbol}/{tf}.");
+            }
+
         if (_warmupRepository != null)
         {
             // Reuse the existing pivot mapping rather than creating a second SQL mapping.
@@ -146,6 +160,32 @@ public class WarmupEtlService
                 inst.GetCandles(tf)[^1].OpenTime.ToOffset(TimeSpan.FromMinutes(330)).Date)).Min();
         equitySnapshot.SnapshotDate = foSnapshot.SnapshotDate = sourceDate;
 
+        var additions = new RuntimeSnapshot { SnapshotDate = sourceDate, Generation = generation,
+            Instruments = equitySnapshot.Instruments.Concat(foSnapshot.Instruments).ToDictionary(x => x.Key, x => x.Value),
+            IndicatorSeries = equitySnapshot.IndicatorSeries.Concat(foSnapshot.IndicatorSeries).ToDictionary(x => x.Key, x => x.Value) };
+        if (instrumentTokens != null)
+        {
+            var loader = new SnapshotLoader(outputFolder);
+            var existing = await loader.LoadLatestSnapshotAsync(expectedFingerprint: dependencyRegistry.Fingerprint,
+                cancellationToken: cancellationToken);
+            if (existing.Instruments.Count == 0)
+                throw new InvalidDataException("A compatible snapshot pair is required before adding instruments.");
+            string equityFile = new DirectoryInfo(outputFolder).GetFiles("Warmup_Equities_*.json")
+                .OrderByDescending(file => file.LastWriteTime).First().FullName;
+            string foFile = Path.Combine(outputFolder, Path.GetFileName(equityFile).Replace("Warmup_Equities_", "Warmup_FO_"));
+            foreach (var pair in new[] { (equitySnapshot, equityFile), (foSnapshot, foFile) })
+            {
+                var previous = await FlatFileManager.LoadSnapshotAsync(pair.Item2, cancellationToken)
+                    ?? throw new InvalidDataException("The existing snapshot is unavailable.");
+                foreach (var entry in previous.Instruments)
+                    pair.Item1.Instruments.TryAdd(entry.Key, entry.Value);
+                foreach (var entry in previous.IndicatorSeries)
+                    pair.Item1.IndicatorSeries.TryAdd(entry.Key, entry.Value);
+            }
+            equitySnapshot.SnapshotDate = foSnapshot.SnapshotDate = sourceDate < existing.SnapshotDate
+                ? sourceDate : existing.SnapshotDate;
+        }
+
         // Both asset files carry the same generation; an incomplete pair is never loaded.
         // 4. Save to Disk
         if (!Directory.Exists(outputFolder))
@@ -156,13 +196,14 @@ public class WarmupEtlService
         string equityPath = Path.Combine(outputFolder, $"Warmup_Equities_{marketDate:yyyyMMdd}_{generation:N}.json");
         string foPath = Path.Combine(outputFolder, $"Warmup_FO_{marketDate:yyyyMMdd}_{generation:N}.json");
 
+        // The loader discovers pairs via the equity filename; publish the companion first.
+        Console.WriteLine("[ETL] Saving F&O Snapshot...");
+        await FlatFileManager.SaveSnapshotAsync(foPath, foSnapshot, cancellationToken);
         Console.WriteLine("[ETL] Saving Equities Snapshot...");
         await FlatFileManager.SaveSnapshotAsync(equityPath, equitySnapshot, cancellationToken);
 
-        Console.WriteLine("[ETL] Saving F&O Snapshot...");
-        await FlatFileManager.SaveSnapshotAsync(foPath, foSnapshot, cancellationToken);
-
         Console.WriteLine("[ETL] Warmup Complete!");
+        return additions;
     }
 
     internal static Timeframe ParseTimeframe(string tf)

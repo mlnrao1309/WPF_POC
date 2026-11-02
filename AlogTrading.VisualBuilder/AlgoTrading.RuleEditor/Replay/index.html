@@ -203,6 +203,8 @@ body{
   font-size:10.5px;font-weight:650;letter-spacing:.02em;padding:4px 9px;border-radius:7px;
   cursor:pointer;transition:.15s;
 }
+.seg button:disabled{opacity:.4;cursor:default}
+.chart-zoom[hidden]{display:none}
 .seg button:hover{color:var(--text)}
 .seg button.is-active{background:#1b2637;color:#dde8f8;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);}
 
@@ -356,6 +358,11 @@ button.trade:disabled{cursor:default;opacity:.55;}
             <div class="legend" id="legendEquity" hidden>
               <span class="lg"><i class="sw sw--line"></i>Equity</span>
               <span class="lg"><i class="sw sw--base"></i>Start <span id="startCapText">₹50,000</span></span>
+            </div>
+            <div class="seg chart-zoom" id="chartZoom" role="group" aria-label="Candle chart zoom">
+              <button type="button" id="zoomOut" aria-label="Zoom out" title="Zoom out (mouse wheel down)" disabled>−</button>
+              <button type="button" id="zoomReset" title="Reset candle view (double-click chart)" disabled>Reset</button>
+              <button type="button" id="zoomIn" aria-label="Zoom in" title="Zoom in (mouse wheel up)" disabled>+</button>
             </div>
             <div class="seg" id="chartSeg">
               <button data-c="price" class="is-active">Price</button>
@@ -897,6 +904,8 @@ button.trade:disabled{cursor:default;opacity:.55;}
     svg.innerHTML = '';
     geom = null;
 
+    updateZoomControls();
+
     // ---- no candle data ----
     if (!candles || candles.length < 2) {
       const t = sEl('text', {
@@ -1180,28 +1189,48 @@ button.trade:disabled{cursor:default;opacity:.55;}
   priceWrap.addEventListener('pointermove', onPriceMove);
   priceWrap.addEventListener('pointerleave', () => { if (!drag) hideCrosshair(); });
 
-  // --- zoom ---
-  priceWrap.addEventListener('wheel', e => {
-    if (!geom || !candles) return;
-    e.preventDefault();
+  // Zoom buttons use the chart center; the wheel anchors at the cursor.
+  function updateZoomControls() {
+    const total = replayEnd + 1;
+    const available = chartMode === 'price' && candles?.length >= 2 && total > 0;
+    const count = Math.min(total, view.end - view.start + 1);
+    document.getElementById('chartZoom').hidden = chartMode !== 'price';
+    document.getElementById('zoomIn').disabled = !available || count <= Math.min(5, total);
+    document.getElementById('zoomOut').disabled = !available || count >= total;
+    document.getElementById('zoomReset').disabled = !available;
+  }
+
+  function zoomPrice(factor, fraction = .5) {
+    if (!geom || !candles || chartMode !== 'price' || drag) return;
     const g = geom;
-    const rect = g.wrap.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const frac = Math.max(0, Math.min(1, (mx - g.P.l) / g.iw));
-    const count = g.n;
-    const anchor = g.v0 + frac * count;
-
-    const factor = e.deltaY > 0 ? 1.18 : 1 / 1.18;
-    let newCount = Math.round(count * factor);
-    newCount = Math.max(1, Math.min(replayEnd+1, Math.max(24,newCount)));
-
-    let ns = Math.round(anchor - frac * newCount);
-    ns = Math.max(0, Math.min(replayEnd+1 - newCount, ns));
-
-    view.start = ns;
-    view.end = ns + newCount - 1;
+    const total = replayEnd + 1;
+    const count = Math.max(Math.min(5, total), Math.min(total, Math.round(g.n * factor)));
+    if (count === g.n) return;
+    const anchor = g.v0 + fraction * g.n;
+    const start = Math.max(0, Math.min(total - count, Math.round(anchor - fraction * count)));
+    view.start = start;
+    view.end = start + count - 1;
     hideCrosshair();
     drawPrice();
+  }
+
+  function resetPriceZoom() {
+    if (!candles || chartMode !== 'price') return;
+    resetView();
+    hideCrosshair();
+    drawPrice();
+  }
+
+  document.getElementById('zoomIn').addEventListener('click', () => zoomPrice(1 / 1.25));
+  document.getElementById('zoomOut').addEventListener('click', () => zoomPrice(1.25));
+  document.getElementById('zoomReset').addEventListener('click', resetPriceZoom);
+
+  priceWrap.addEventListener('wheel', e => {
+    if (!geom || !candles || chartMode !== 'price' || !e.deltaY) return;
+    e.preventDefault();
+    const rect = priceWrap.getBoundingClientRect();
+    const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left - geom.P.l) / geom.iw));
+    zoomPrice(e.deltaY > 0 ? 1.18 : 1 / 1.18, fraction);
   }, { passive: false });
 
   // --- pan ---
@@ -1237,12 +1266,7 @@ button.trade:disabled{cursor:default;opacity:.55;}
   priceWrap.addEventListener('pointercancel', endDrag);
 
   // --- reset zoom on double click ---
-  priceWrap.addEventListener('dblclick', () => {
-    if (!candles) return;
-    resetView();
-    hideCrosshair();
-    drawPrice();
-  });
+  priceWrap.addEventListener('dblclick', resetPriceZoom);
 
   /* =========================================================
      TRADE P&L STRIP
@@ -1302,6 +1326,7 @@ button.trade:disabled{cursor:default;opacity:.55;}
     const mode = b.dataset.c;
     if (mode === chartMode) return;
     chartMode = mode;
+    updateZoomControls();
 
     Array.from(chartSeg.children).forEach(x => x.classList.toggle('is-active', x === b));
 

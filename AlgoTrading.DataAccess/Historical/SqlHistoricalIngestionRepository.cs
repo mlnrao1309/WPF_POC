@@ -157,11 +157,11 @@ namespace AlgoTrading.DataAccess.Historical
             }
 
             using DataTable candles = BuildCandleTable(request, providerPayload);
-            // Only the completed-candle polling path publishes to the warmup registry.
-            // Resolve and convert before opening SQL so missing warmup state fails explicitly.
+            // Backfill can seed SQL history before a new instrument has been warmed up.
+            // Polling still requires an existing registry entry.
             Instruments? instrument = request.CandleStart.HasValue && this.registry != null
                 ? this.registry.GetByToken(request.InstrumentToken)
-                    ?? throw new InvalidOperationException($"Instrument {request.InstrumentToken} is missing from the warmup registry.")
+                    ?? (advanceCheckpoint ? null : throw new InvalidOperationException($"Instrument {request.InstrumentToken} is missing from the warmup registry."))
                 : null;
             string databaseTimeframe = HistoricalStreamTypes.GetDatabaseTimeframe(request.StreamType);
             Timeframe timeframe = databaseTimeframe == "D" ? Timeframe.Day

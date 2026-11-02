@@ -78,7 +78,7 @@ public class WarmupRepository : IWarmupRepository
                         return Candle.Create(
                             AlgoTrading.Models.MarketTimestamp.FromDatabase(c.Timestamp),
                             tf,
-                            c.Open, c.High, c.Low, c.Close, c.Volume.HasValue? c.Volume.Value :0, c.OI);
+                            c.Open, c.High, c.Low, c.Close, c.Volume.HasValue ? c.Volume.Value : 0, c.OI);
                     })
                     // 3. Group by the EXACT property Candles checks: CloseTime
                     // This guarantees no matter what the Timestamp precision was, 
@@ -167,12 +167,13 @@ public class WarmupRepository : IWarmupRepository
                         High: p.Ref_StartCandle_High!.Value,
                         Low: p.Ref_StartCandle_Low!.Value,
                         Close: p.Ref_StartCandle_Close!.Value,
+                        CapturedValue: null,
                         CapturedAtEvaluationTime: sourceTime
                     ));
                 }
             }
         }
-        
+
         return instrumentDict;
     }
 
@@ -185,8 +186,8 @@ public class WarmupRepository : IWarmupRepository
 
     // Inside GetWarmupSnapshotAsync, after inst.SetCandles(tf, candles);
 
-    
-    
+
+
 }
 
 // Updated to match the 29 columns from your SQL query exactly

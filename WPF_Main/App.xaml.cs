@@ -91,7 +91,11 @@ namespace AlgoTrading
                     services.AddSingleton<IInstrumentRepository, InstrumentRepository>();
                     services.AddSingleton<IMarketWatchRepository, MarketWatchRepository>();
                     services.AddSingleton<IMarketWatchApiService, MarketWatchApiService>();
-                    services.AddSingleton<IHistoricalDataWorkflow, HistoricalDataWorkflow>();
+                    services.AddSingleton<IHistoricalDataWorkflow>(provider => new HistoricalDataWorkflow(
+                        provider.GetRequiredService<SqlHistoricalIngestionRepository>(), provider.GetRequiredService<HttpClient>(),
+                        provider.GetRequiredService<IAccessTokenProvider>(), provider.GetRequiredService<IInstrumentRegistry>(),
+                        provider.GetRequiredService<WarmupEtlService>(), provider.GetRequiredService<ITradingCalendarRepository>(),
+                        provider.GetRequiredService<TradingCalendarSelection>(), resourcesFolder));
                     services.AddSingleton<IHistoricalPollingCoordinator, HistoricalPollingCoordinator>();
                     services.AddTransient<MainWindow>();
                     services.AddSingleton<MarketWatchViewModel>();
