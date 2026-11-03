@@ -69,7 +69,8 @@ public sealed class StrategyRepositoryService
         using var connection = new SqlConnection(_connectionString);
         await connection.QueryAsync("dbo.StrategyBacktest_PrepareData", new
         {
-            InstrumentToken = (long)instrument, RuleJson = ruleJson,
+            InstrumentToken = (long)instrument,
+            RuleJson = ruleJson,
             FromUtc = DateTime.SpecifyKind(from.ToDateTime(TimeOnly.MinValue).AddMinutes(-330), DateTimeKind.Utc),
             ToUtc = DateTime.SpecifyKind(to.ToDateTime(new TimeOnly(23, 59, 59)).AddMinutes(-330), DateTimeKind.Utc),
             ValidateOnly = true
@@ -80,9 +81,7 @@ public sealed class StrategyRepositoryService
     {
         if (!IsAvailable)
             throw new InvalidOperationException("SQL connection is not configured for run history.");
-        using var conn = new SqlConnection(_connectionString);
-        var rows = await conn.QueryAsync<RunRowDto>("dbo.StrategyBacktest_Recent", new { Limit = limit },
-            commandType: System.Data.CommandType.StoredProcedure).ConfigureAwait(false);
+        var rows = await LoadRecentRunRowsAsync(limit).ConfigureAwait(false);
         var list = new List<RunListRow>();
         foreach (var r in rows)
         {
@@ -104,6 +103,37 @@ public sealed class StrategyRepositoryService
             });
         }
         return list;
+    }
+
+    private async Task<IEnumerable<RunRowDto>> LoadRecentRunRowsAsync(int limit)
+    {
+        const int maxAttempts = 3;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                // Dispose each failed connection before waiting and retry the entire buffered read.
+                using var conn = new SqlConnection(_connectionString);
+                return await conn.QueryAsync<RunRowDto>("dbo.StrategyBacktest_Recent", new { Limit = limit },
+                    commandType: System.Data.CommandType.StoredProcedure).ConfigureAwait(false);
+            }
+            catch (SqlException ex) when (ex.Number == 1205)
+            {
+                if (attempt >= maxAttempts)
+                {
+                    System.Diagnostics.Trace.TraceError(
+                        "Run history deadlock retries exhausted after {0} attempts. ConnectionId={1}",
+                        attempt, ex.ClientConnectionId);
+                    throw;
+                }
+
+                var delayMs = (attempt == 1 ? 150 : 400) + Random.Shared.Next(0, 101);
+                System.Diagnostics.Trace.TraceWarning(
+                    "Run history deadlock on attempt {0}/{1}; retrying in {2} ms. ConnectionId={3}",
+                    attempt, maxAttempts, delayMs, ex.ClientConnectionId);
+                await Task.Delay(delayMs).ConfigureAwait(false);
+            }
+        }
     }
 
     private sealed class RunRowDto
