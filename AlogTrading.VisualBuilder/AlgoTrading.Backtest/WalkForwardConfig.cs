@@ -1,13 +1,18 @@
 namespace AlgoTrading.Backtest;
 
-/// <summary>
-/// Walk-forward analysis configuration (Section 5.16).
-/// </summary>
+public enum BoundaryPolicy
+{
+    FlatAtBoundary,       // Close all open positions at the end of the slice
+    CarryToNextWindow     // (Future) Carry positions across folds
+}
+
 public sealed class WalkForwardConfig
 {
-    /// <summary>Fraction of each window used for in-sample optimization, in (0,1).</summary>
     public double InSampleRatio { get; init; } = 0.7;
-
-    /// <summary>Number of disjoint windows that tile the full date range.</summary>
     public int WindowCount { get; init; } = 5;
+
+    // NEW: M4 Requirements
+    public int WarmupDays { get; init; } = 30;
+    public double FinalHoldoutRatio { get; init; } = 0.2;
+    public BoundaryPolicy BoundaryPolicy { get; init; } = BoundaryPolicy.FlatAtBoundary;
 }

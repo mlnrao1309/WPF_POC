@@ -53,7 +53,7 @@ public sealed class FailureModeTests
         var rule = MakeRule(0m, 100m, 1m, 50m);
         Assert.Throws<ArgumentException>(() => ParameterSweep.Run(
             rule, Ramp(10), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 100));
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 100));
     }
 
     [Fact]
@@ -66,9 +66,9 @@ public sealed class FailureModeTests
 
         var result = ParameterSweep.Run(
             rule, emptySeries, RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
 
-        Assert.Equal(1, result.CombinationCount);
+        Assert.Equal(1, result.TotalCombinations);
         Assert.Equal(0, result.Best.Metrics.TotalTrades);
     }
 

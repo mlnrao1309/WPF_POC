@@ -53,8 +53,8 @@ public sealed class ParameterSweepTests
         var rule = MakeThresholdRule(50m, 50m, 1m, 50m);
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
-        Assert.Equal(1, result.CombinationCount);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
+        Assert.Equal(1, result.TotalCombinations);
         Assert.Single(result.Ranked);
     }
 
@@ -65,8 +65,8 @@ public sealed class ParameterSweepTests
         var rule = MakeThresholdRule(0m, 10m, 3m, 5m);
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
-        Assert.Equal(4, result.CombinationCount);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
+        Assert.Equal(4, result.TotalCombinations);
     }
 
     [Fact]
@@ -80,8 +80,8 @@ public sealed class ParameterSweepTests
         });
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
-        Assert.Equal(12, result.CombinationCount);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
+        Assert.Equal(12, result.TotalCombinations);
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class ParameterSweepTests
         var rule = MakeThresholdRule(0m, 100m, 1m, 50m);
         Assert.Throws<ArgumentException>(() => ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 100));
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 100));
     }
 
     [Fact]
@@ -101,8 +101,8 @@ public sealed class ParameterSweepTests
         rule.Parameters = new List<ParameterSpec>();
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
-        Assert.Equal(1, result.CombinationCount);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
+        Assert.Equal(1, result.TotalCombinations);
         Assert.Empty(result.Best.Parameters);
     }
 
@@ -112,7 +112,7 @@ public sealed class ParameterSweepTests
         var rule = MakeThresholdRule(0m, 200m, 50m, 100m);
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
         decimal max = result.Ranked.Max(e => e.CriterionValue);
         Assert.Equal(max, result.Best.CriterionValue);
         Assert.Same(result.Best, result.Ranked[0]);
@@ -131,7 +131,7 @@ public sealed class ParameterSweepTests
         {
             var rule = MakeThresholdRule(50m, 50m, 1m, 50m);
             var result = ParameterSweep.Run(
-                rule, Ramp(), RuleBuilder.ZeroCostOptions(), c, 1000);
+                rule, Ramp(), RuleBuilder.ZeroCostOptions(), c, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
             decimal expected = c switch
             {
                 SweepCriterion.Sharpe       => result.Best.Metrics.Sharpe,
@@ -151,7 +151,7 @@ public sealed class ParameterSweepTests
         var rule = MakeThresholdRule(50m, 200m, 150m, 50m);
         var result = ParameterSweep.Run(
             rule, Ramp(), RuleBuilder.ZeroCostOptions(),
-            SweepCriterion.NetPnL, 1000);
+            SweepCriterion.NetPnL, ParameterSweep.CreateBindingsFromSpecs(rule.Parameters), validityCheck: null, maxCombinations: 1000);
         int distinct = result.Ranked.Select(e => e.CriterionValue).Distinct().Count();
         Assert.True(distinct > 1,
             "Expected criterion values to differ across parameter combinations.");

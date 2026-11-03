@@ -9,26 +9,11 @@ using AlgoTrading.Backtest.Runtime;
 using AlgoTrading.Data;
 using AlgoTrading.Data.Daos;
 using AlgoTrading.Models;
+using AlgoTrading.Research.Analysis;
+using AlgoTrading.Models.Analysis; // <-- ADD THIS
 
 namespace AlgoTrading.Backtest.Cli.Bridge;
 
-/// <summary>
-/// Real IBacktestFacade implementation. This is the sole file in the CLI
-/// project that references AlgoTrading.Backtest.*, AlgoTrading.Data.* and
-/// AlgoTrading.Models.*. Everything else in the CLI stays decoupled.
-///
-/// Pipeline:
-///   1. Deserialize the rule from request JSON.
-///   2. Validate it via RuleDefinitionValidator.
-///   3. Load bars through BarSeriesFactory (backed by AppSettings.Data).
-///   4. Build BacktestEngineOptions from AppSettings + request.
-///   5. Run the base engine on the full series.
-///   6. Attach sweep / walk-forward blocks per request.Mode.
-///   7. Serialize: result JSON, trades CSV, summary text, metrics summary.
-///
-/// Exceptions are mapped to FacadeResult.Fail; OperationCanceledException is
-/// re-thrown so the CLI's cancellation surface keeps working.
-/// </summary>
 public sealed class BacktestFacade : IBacktestFacade
 {
     private readonly AppSettings _settings;
@@ -136,16 +121,14 @@ public sealed class BacktestFacade : IBacktestFacade
     private FacadeResult RunCore(FacadeRequest req, RuleDefinition rule,
         IReadOnlyDictionary<Timeframe, IBarSeries> prepared, CancellationToken ct)
     {
-        // Preparation has succeeded before the history row is created.
         var bars = prepared[rule.BaseTimeframe];
 
         var signalObservations = new List<SignalObservation>();
         bool recordSignals = true;
 
-        // 4. Engine options.
         var options = new BacktestEngineOptions
         {
-            EnableTracing = true, // <--- Set this to true
+            EnableTracing = true,
             SignalObserver = observation => { if (recordSignals) signalObservations.Add(observation); },
             InitialCapital = req.TradedCapital,
             LossBasis = req.LossBasis,
@@ -161,23 +144,31 @@ public sealed class BacktestFacade : IBacktestFacade
             DailySeries = prepared.GetValueOrDefault(Timeframe.Parse("D"))
         };
 
-        // 5. Base run on the full series.
         var engine = new BacktestEngine(options);
         var result = engine.Run(rule, bars, ct);
         recordSignals = false;
 
-        // 7. --- Generate Replay Artifacts ---
         var replayGen = new ReplayArtifactGenerator();
         var artifacts = replayGen.Generate(req.RunId, rule, prepared, bars, signalObservations);
         _artifacts.InsertArtifactsAsync(req.RunId, artifacts).GetAwaiter().GetResult();
 
-        // 6. Mode-specific blocks.
         switch (req.Mode)
         {
             case RunMode.Sweep:
+                var bindings = ParameterSweep.CreateBindingsFromSpecs(rule.Parameters ?? new List<ParameterSpec>());
+
+                // M3 GATE: Wire the M1 Static Analyzer
+                Func<RuleDefinition, IEnumerable<string>> validityCheck = (candidate) =>
+                {
+                    var findings = RuleStaticAnalyzer.Analyze(candidate);
+                    return findings
+                        .Where(f => f.Severity == FindingSeverity.Blocker)
+                        .Select(f => f.Description);
+                };
+
                 result.Sweep = ParameterSweep.Run(
                     rule, bars, options, SweepCriterion.Sharpe,
-                    _settings.Backtest.MaxSweepCombinations, ct);
+                    bindings, validityCheck, _settings.Backtest.MaxSweepCombinations, ct);
                 break;
 
             case RunMode.WalkForward:
@@ -196,7 +187,6 @@ public sealed class BacktestFacade : IBacktestFacade
                 break;
         }
 
-        // 7. Serialize artifacts.
         if (req.Mode != RunMode.Single)
             result.RiskAssessment = new RiskAssessment
             {
@@ -322,7 +312,8 @@ public sealed class BacktestFacade : IBacktestFacade
         {
             var s = result.Sweep;
             sb.Append("Sweep criterion: ").AppendLine(s.Criterion.ToString());
-            sb.Append("Combinations:    ").AppendLine(s.CombinationCount.ToString(inv));
+            sb.Append("Combinations:    ").AppendLine(s.TotalCombinations.ToString(inv));
+            sb.Append("Valid Combos:    ").AppendLine(s.ValidCombinations.ToString(inv));
             sb.Append("Best criterion:  ").AppendLine(s.Best.CriterionValue.ToString("0.####", inv));
             sb.AppendLine();
             sb.AppendLine("Best parameters:");
@@ -334,7 +325,8 @@ public sealed class BacktestFacade : IBacktestFacade
             for (int i = 0; i < take; i++)
             {
                 sb.Append("  #").Append((i + 1).ToString(inv))
-                  .Append("  criterion=").Append(s.Ranked[i].CriterionValue.ToString("0.####", inv));
+                  .Append("  criterion=").Append(s.Ranked[i].CriterionValue.ToString("0.####", inv))
+                  .Append("  valid=").Append(s.Ranked[i].IsValid);
                 foreach (var kv in s.Ranked[i].Parameters.OrderBy(k => k.Key, StringComparer.Ordinal))
                     sb.Append("  ").Append(kv.Key).Append('=').Append(kv.Value.ToString(inv));
                 sb.AppendLine();
@@ -349,13 +341,34 @@ public sealed class BacktestFacade : IBacktestFacade
             sb.Append("Aggregate OOS MaxDD%:        ").AppendLine(w.AggregateOOSMaxDrawdownPct.ToString("0.##", inv));
             sb.Append("Consistency:                 ").AppendLine(w.ConsistencyScore.ToString("0.####", inv));
             sb.AppendLine();
+
+            if (w.HoldoutMetrics != null)
+            {
+                sb.AppendLine("Final Holdout Set:");
+                sb.Append("  Range:        ").Append(w.HoldoutFrom?.ToString("yyyy-MM-dd", inv)).Append(" to ").AppendLine(w.HoldoutTo?.ToString("yyyy-MM-dd", inv));
+                sb.Append("  Trades:       ").AppendLine(w.HoldoutMetrics.TotalTrades.ToString(inv));
+                sb.Append("  Net P&L:      ").AppendLine(w.HoldoutMetrics.TotalNetPnL.ToString("N2", inv));
+                sb.Append("  Sharpe:       ").AppendLine(w.HoldoutMetrics.Sharpe.ToString("0.####", inv));
+                sb.Append("  Max Drawdown: ").AppendLine(w.HoldoutMetrics.MaxDrawdownPct.ToString("0.##", inv));
+                sb.AppendLine();
+            }
+
             sb.AppendLine("Per window:");
             foreach (var win in w.Windows)
             {
                 sb.Append("  #").Append(win.WindowIndex.ToString(inv))
+                  .Append("  IS Warmup: ").Append(win.ISWarmupFrom.ToString("yyyy-MM-dd", inv))
+                  .Append(" -> OOS: ").Append(win.OOSFrom.ToString("yyyy-MM-dd", inv))
+                  .Append(" to ").Append(win.OOSTo.ToString("yyyy-MM-dd", inv))
                   .Append("  OOS trades=").Append(win.OOSMetrics.TotalTrades.ToString(inv))
                   .Append("  OOS Sharpe=").Append(win.OOSMetrics.Sharpe.ToString("0.####", inv))
-                  .Append("  Degradation=").AppendLine(win.DegradationRatio.ToString("0.####", inv));
+                  .AppendLine();
+
+                if (win.RejectedTrials.Count > 0)
+                {
+                    sb.Append("    Rejected Trials: ").AppendLine(string.Join("; ", win.RejectedTrials));
+                }
+                sb.Append("    Test Frozen: ").AppendLine(win.TestWasFrozen.ToString());
             }
         }
 

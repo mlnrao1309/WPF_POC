@@ -21,12 +21,16 @@ public sealed class ExpressionEvaluator
         _references = references;
     }
 
-    public bool TryEvaluate(ValueExpression expr, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
+    public bool TryGetReferenceInfo(string id, out ReferenceValue value)
+        => _references.TryGetValue(id, out value!);
+
+    public bool TryEvaluate(ValueExpression expr, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value, out DateTimeOffset? availableAt)
     {
+        availableAt = null;
         switch (expr)
         {
             case FieldExpression fe:
-                return TryField(fe, defaultTf, baseIndex, extraOffset, out value);
+                return TryField(fe, defaultTf, baseIndex, extraOffset, out value, out availableAt);
 
             case NumberExpression ne:
                 value = ne.Value;
@@ -42,24 +46,24 @@ public sealed class ExpressionEvaluator
                 return false;
 
             case IndicatorExpression ie:
-                return TryIndicator(ie, defaultTf, baseIndex, extraOffset, out value);
+                return TryIndicator(ie, defaultTf, baseIndex, extraOffset, out value, out availableAt);
 
             case ReferenceExpression re:
                 if (_references.TryGetValue(re.Id, out var refVal))
                 {
+                    availableAt = refVal.AvailableAtUtc ?? new DateTimeOffset(
+                        refVal.Candle.DateTime.Kind == DateTimeKind.Utc ? refVal.Candle.DateTime
+                            : DateTime.SpecifyKind(refVal.Candle.DateTime.AddMinutes(-330), DateTimeKind.Utc));
                     if (re.Field == "Value")
                     {
                         if (refVal.CapturedValue.HasValue) { value = refVal.CapturedValue.Value; return true; }
                         value = 0m; return false;
                     }
-
                     if (re.Field == "AgeInBars")
                     {
-                        // Current base index - the base index when it was captured
                         value = baseIndex - refVal.CapturedBarIndex;
                         return true;
                     }
-
                     var bar = refVal.Candle;
                     value = re.Field switch
                     {
@@ -76,7 +80,7 @@ public sealed class ExpressionEvaluator
                 return false;
 
             case CalculationExpression ce:
-                return TryCalculation(ce, defaultTf, baseIndex, extraOffset, out value);
+                return TryCalculation(ce, defaultTf, baseIndex, extraOffset, out value, out availableAt);
 
             default:
                 value = 0m;
@@ -84,57 +88,54 @@ public sealed class ExpressionEvaluator
         }
     }
 
-    private bool TryField(FieldExpression fe, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
+    private bool TryField(FieldExpression fe, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value, out DateTimeOffset? availableAt)
     {
         var tf = fe.Timeframe ?? defaultTf;
         var aligned = _accessor.Resolve(tf);
-
         int j = aligned.BaseToTfIndex[baseIndex] - fe.Offset - extraOffset;
-        if (j < 0) { value = 0m; return false; }
-
+        if (j < 0) { value = 0m; availableAt = null; return false; }
         var span = aligned.GetFieldSpan(fe.Field.ToString());
         value = span[j];
+        var barEnd = TimeframeAccessor.BarEnd(aligned.Bars, j);
+        availableAt = new DateTimeOffset(barEnd, TimeSpan.Zero);
         return true;
     }
 
-    private bool TryIndicator(IndicatorExpression ie, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
+    private bool TryIndicator(IndicatorExpression ie, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value, out DateTimeOffset? availableAt)
     {
         var tf = ie.Timeframe ?? defaultTf;
         var aligned = _accessor.Resolve(tf);
-
         int j = aligned.BaseToTfIndex[baseIndex] - ie.Offset - extraOffset;
-        if (j < 0) { value = 0m; return false; }
-
+        if (j < 0) { value = 0m; availableAt = null; return false; }
         var series = _indicators.Resolve(ie, defaultTf);
-        if (j < series.FirstValidIndex) { value = 0m; return false; }
-
+        if (j < series.FirstValidIndex) { value = 0m; availableAt = null; return false; }
         var outName = ie.Output ?? series.OutputNames[0];
         int oi = series.IndexOfOutput(outName);
-        if (oi < 0) { value = 0m; return false; }
-
+        if (oi < 0) { value = 0m; availableAt = null; return false; }
         var v = series.Outputs[oi][j];
-        if (v is null) { value = 0m; return false; }
+        if (v is null) { value = 0m; availableAt = null; return false; }
         value = v.Value;
+        var barEnd = TimeframeAccessor.BarEnd(aligned.Bars, j);
+        availableAt = new DateTimeOffset(barEnd, TimeSpan.Zero);
         return true;
     }
 
-    private bool TryCalculation(CalculationExpression ce, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value)
+    private bool TryCalculation(CalculationExpression ce, Timeframe defaultTf, int baseIndex, int extraOffset, out decimal value, out DateTimeOffset? availableAt)
     {
+        availableAt = null;
         if (ce.Left is null || ce.Right is null) { value = 0m; return false; }
-        if (!TryEvaluate(ce.Left, defaultTf, baseIndex, extraOffset, out var l)) { value = 0m; return false; }
-        if (!TryEvaluate(ce.Right, defaultTf, baseIndex, extraOffset, out var r)) { value = 0m; return false; }
-
+        if (!TryEvaluate(ce.Left, defaultTf, baseIndex, extraOffset, out var l, out var lTime)) { value = 0m; return false; }
+        if (!TryEvaluate(ce.Right, defaultTf, baseIndex, extraOffset, out var r, out var rTime)) { value = 0m; return false; }
+        availableAt = lTime.HasValue && rTime.HasValue
+            ? (lTime > rTime ? lTime : rTime)
+            : (lTime ?? rTime);
         switch (ce.Op)
         {
             case CalculationOp.Add: value = l + r; return true;
             case CalculationOp.Subtract: value = l - r; return true;
             case CalculationOp.Multiply: value = l * r; return true;
-            case CalculationOp.Divide:
-                if (r == 0m) { value = 0m; return false; }
-                value = l / r; return true;
-            case CalculationOp.Modulo:
-                if (r == 0m) { value = 0m; return false; }
-                value = l % r; return true;
+            case CalculationOp.Divide: if (r == 0m) { value = 0m; return false; } value = l / r; return true;
+            case CalculationOp.Modulo: if (r == 0m) { value = 0m; return false; } value = l % r; return true;
             case CalculationOp.Min: value = Math.Min(l, r); return true;
             case CalculationOp.Max: value = Math.Max(l, r); return true;
             default: value = 0m; return false;

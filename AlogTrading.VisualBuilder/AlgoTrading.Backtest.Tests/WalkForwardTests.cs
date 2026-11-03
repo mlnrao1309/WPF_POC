@@ -56,9 +56,9 @@ public sealed class WalkForwardTests
     }
 
     [Fact]
-    public void WindowDates_CoverFullRange()
+    public void WindowDates_WithoutHoldout_CoverFullRange()
     {
-        var cfg = new WalkForwardConfig { InSampleRatio = 0.7, WindowCount = 4 };
+        var cfg = new WalkForwardConfig { InSampleRatio = 0.7, WindowCount = 4, FinalHoldoutRatio = 0 };
         var series = Ramp(100);
         var result = WalkForward.Run(
             MakeRule(), series, RuleBuilder.ZeroCostOptions(), cfg, 1000);
@@ -103,3 +103,4 @@ public sealed class WalkForwardTests
         Assert.InRange(result.ConsistencyScore, 0.0, 1.0);
     }
 }
+

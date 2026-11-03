@@ -212,42 +212,38 @@ public sealed partial class IndicatorProvider
 
     private IndicatorSeries ComputePivots(IndicatorKind kind, AlignedSeries target)
     {
-        var tf = target.Timeframe;
-        var bars = ToCandles(target, tf);
-        
-        string[] names;
-        decimal?[][] outputs;
-        
-        if (kind == IndicatorKind.PivotPointsCamarilla)
+        // Intraday pivots use completed daily OHLC, never partial intraday aggregates
+        // as the current source period. Positional D/W/M expressions use that period.
+        var sourceTf = target.Timeframe.Unit is TimeframeUnit.m or TimeframeUnit.H
+            ? Timeframe.Parse("D") : target.Timeframe;
+        var source = _accessor.Resolve(sourceTf);
+        string[] names = kind == IndicatorKind.PivotPointsCamarilla
+            ? ["R4", "R3", "R2", "R1", "S1", "S2", "S3", "S4"]
+            : ["P", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5"];
+        var outputs = names.Select(_ => new decimal?[target.TfBarCount]).ToArray();
+        int j = -1;
+        for (int i = 0; i < target.TfBarCount; i++)
         {
-            var cam = bars.Camarilla();
-            names = ["R4", "R3", "R2", "R1", "S1", "S2", "S3", "S4"];
-            outputs = [cam.R4.Values, cam.R3.Values, cam.R2.Values, cam.R1.Values,
-                cam.S1.Values, cam.S2.Values, cam.S3.Values, cam.S4.Values];
-        }
-        else
-        {
-            names = ["P", "R1", "R2", "R3", "R4", "R5", "S1", "S2", "S3", "S4", "S5"];
-            outputs = names.Select(_ => new decimal?[bars.Count]).ToArray();
-            for (int i = 1; i < bars.Count; i++)
+            var effectiveAt = target.Bars.DateTime.Span[i];
+            while (j + 1 < source.TfBarCount && TimeframeAccessor.BarEnd(source.Bars, j + 1) <= effectiveAt) j++;
+            if (j < 0) continue;
+            var high = source.Bars.High.Span[j];
+            var low = source.Bars.Low.Span[j];
+            var close = source.Bars.Close.Span[j];
+            decimal[] values;
+            if (kind == IndicatorKind.PivotPointsCamarilla)
             {
-                var previous = bars[i - 1];
-                var p = PivotHelpers.Traditional(previous.High, previous.Low, previous.Close);
-                decimal[] values = [p.P, p.R1, p.R2, p.R3, p.R4, p.R5, p.S1, p.S2, p.S3, p.S4, p.S5];
-                for (int k = 0; k < names.Length; k++) outputs[k][i] = values[k];
+                var p = CamarillaPivots.Calculate(high, low, close);
+                values = [p.R4, p.R3, p.R2, p.R1, p.S1, p.S2, p.S3, p.S4];
             }
+            else
+            {
+                var p = PivotHelpers.Traditional(high, low, close);
+                values = [p.P, p.R1, p.R2, p.R3, p.R4, p.R5, p.S1, p.S2, p.S3, p.S4, p.S5];
+            }
+            for (int k = 0; k < values.Length; k++) outputs[k][i] = values[k];
         }
-        
-        int firstValid = bars.Count;
-        for (int i = 0; i < firstValid; i++)
-            if (outputs[0][i].HasValue) { firstValid = i; break; }
-            
-        return new IndicatorSeries
-        {
-            OutputNames = names,
-            Outputs = outputs,
-            FirstValidIndex = firstValid
-        };
+        return Result(names, outputs);
     }
 
     private decimal?[] BuildSourceSeries(ValueExpression? src, Timeframe tf, AlignedSeries aligned, int tfCount)

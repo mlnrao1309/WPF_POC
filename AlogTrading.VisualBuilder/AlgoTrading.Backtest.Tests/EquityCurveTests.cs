@@ -83,7 +83,7 @@ public class EquityCurveTests
         var trade = Assert.Single(result.Trades);
         Assert.Equal(0m,trade.NetPnL);
         Assert.Equal(ExitReason.EndOfData,trade.ExitReason);
-        Assert.Equal(bars.DateTime.Span[3],trade.ExitTime);
+        Assert.Equal(DateTime.SpecifyKind(bars.DateTime.Span[3].AddMinutes(330),DateTimeKind.Unspecified),trade.ExitTime);
         Assert.Equal(approved,result.RiskAssessment.IsBacktestApproved);
         Assert.Equal(1000m,result.RiskAssessment.DailyLossLimit);
         Assert.Equal(2500m,result.RiskAssessment.MonthlyLossLimit);

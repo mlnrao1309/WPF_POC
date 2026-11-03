@@ -27,7 +27,7 @@ public class EngineLoopTests
 
         Assert.Single(result.Trades);
         Assert.Equal(102m, result.Trades[0].EntryPrice);
-        Assert.Equal(Start.AddDays(2), result.Trades[0].EntryTime);
+        Assert.Equal(DateTime.SpecifyKind(Start.AddDays(2).AddMinutes(330), DateTimeKind.Unspecified), result.Trades[0].EntryTime);
         Assert.Equal(ExitReason.EndOfData, result.Trades[0].ExitReason);
         Assert.Equal(104m, result.Trades[0].ExitPrice);
         Assert.Equal(2m, result.Trades[0].GrossPnL);
@@ -81,7 +81,7 @@ public class EngineLoopTests
         Assert.Single(result.Trades);
         Assert.Equal(ExitReason.StopLoss, result.Trades[0].ExitReason);
         Assert.Equal(99.96m, result.Trades[0].ExitPrice);
-        Assert.Equal(Start.AddDays(3), result.Trades[0].ExitTime);
+        Assert.Equal(DateTime.SpecifyKind(Start.AddDays(3).AddMinutes(330), DateTimeKind.Unspecified), result.Trades[0].ExitTime);
     }
 
     [Fact]

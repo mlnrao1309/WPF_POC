@@ -96,7 +96,7 @@ public class ReplayArtifactGeneratorTests
         var artifacts = new ReplayArtifactGenerator().Generate(Guid.NewGuid(), rule,
             new Dictionary<Timeframe, IBarSeries> { [tf] = bars, [daily] = days }, bars, observations);
         Assert.Equal(2, artifacts.Count(a => a.ArtifactKind == "Candles"));
-        using var payload = System.Text.Json.JsonDocument.Parse(Assert.Single(artifacts.Where(a => a.ArtifactKind == "Signals")).PayloadText);
+        using var payload = System.Text.Json.JsonDocument.Parse(Assert.Single(artifacts, a => a.ArtifactKind == "Signals").PayloadText);
         Assert.True(payload.RootElement.GetProperty("recordedEvaluations").GetBoolean());
         Assert.True(payload.RootElement.GetProperty("values")[1][0].GetBoolean());
         Assert.DoesNotContain(new ReplayArtifactGenerator().Generate(Guid.NewGuid(), rule,
@@ -131,6 +131,6 @@ public class ReplayArtifactGeneratorTests
             Assert.NotEqual(start, o.TimestampUtc);
         });
         foreach (var trade in result.Trades.Where(t => t.ExitReason == ExitReason.Target))
-            Assert.DoesNotContain(observations, o => o.TimestampUtc == trade.ExitTime);
+            Assert.DoesNotContain(observations, o => o.TimestampUtc == DateTime.SpecifyKind(trade.ExitTime.AddMinutes(-330), DateTimeKind.Utc));
     }
 }

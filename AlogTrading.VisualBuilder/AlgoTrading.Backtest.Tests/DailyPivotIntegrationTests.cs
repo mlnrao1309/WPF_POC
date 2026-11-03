@@ -130,7 +130,7 @@ public sealed class DailyPivotIntegrationTests
                 case IndicatorKind.BollingerBands: var bb = bars.BollingerBands(); return new[] { Values(bb.Upper), Values(bb.Basis), Values(bb.Lower) };
                 case IndicatorKind.Atr: return new[] { Values(bars.ATR()) };
                 case IndicatorKind.Adx: var adx = bars.ADX(); return new[] { Values(adx.Adx), Values(adx.PlusDi), Values(adx.MinusDi) };
-                case IndicatorKind.Supertrend: var st = bars.SuperTrend(); return new[] { Values(st.Value), st.Direction.Select(x => x.HasValue ? (decimal?)(int)x.Value : null).ToArray() };
+                case IndicatorKind.Supertrend: var st = bars.SuperTrend(); return new[] { Values(st.Value), st.Direction.Select(x => x.HasValue ? (decimal?)(int)x.Value : null).ToArray(), st.TurnedBullish.Select(x => (decimal?)(x ? 1m : 0m)).ToArray(), st.TurnedBearish.Select(x => (decimal?)(x ? 1m : 0m)).ToArray() };
                 case IndicatorKind.Vwap: return new[] { Values(bars.VWAP()) };
                 case IndicatorKind.Obv: return new[] { Values(bars.OBV()) };
                 case IndicatorKind.Adl: return new[] { Values(bars.ADL()) };
@@ -151,7 +151,7 @@ public sealed class DailyPivotIntegrationTests
                 case IndicatorKind.HighLow52W: return new[] { Values(bars.High52W(250)), Values(bars.Low52W(250)) };
                 case IndicatorKind.PivotPointsClassic:
                 case IndicatorKind.PivotPointsCamarilla:
-                    var output = Enumerable.Range(0, kind == IndicatorKind.PivotPointsClassic ? 7 : 8).Select(_ => new decimal?[n]).ToArray();
+                    var output = Enumerable.Range(0, kind == IndicatorKind.PivotPointsClassic ? 11 : 8).Select(_ => new decimal?[n]).ToArray();
                     var cam = daily.Camarilla();
                     var levels = new[] { cam.R4, cam.R3, cam.R2, cam.R1, cam.S1, cam.S2, cam.S3, cam.S4 };
                     for (int i = 25; i < n; i++)
@@ -163,11 +163,16 @@ public sealed class DailyPivotIntegrationTests
                         {
                             var prev = daily[day - 1];
                             var p = PivotHelpers.Traditional(prev.High, prev.Low, prev.Close);
-                            var values = new[] { p.P, p.R1, p.R2, p.R3, p.S1, p.S2, p.S3 };
-                            for (int k = 0; k < 7; k++) output[k][i] = values[k];
+                            var values = new[] { p.P, p.R1, p.R2, p.R3, p.R4, p.R5, p.S1, p.S2, p.S3, p.S4, p.S5 };
+                            for (int k = 0; k < 11; k++) output[k][i] = values[k];
                         }
                     }
                     return output;
+                case IndicatorKind.Count:
+                    var counts = new decimal?[n];
+                    for (int i = 2; i < n; i++)
+                        counts[i] = close.Skip(i - 2).Take(3).Count(value => value > 100m);
+                    return new[] { counts };
                 default: throw new InvalidOperationException(kind.ToString());
             }
         }
@@ -197,7 +202,18 @@ public sealed class DailyPivotIntegrationTests
             var intraday = Series(bars, timeframe, count);
             var days = Series(daily, Timeframe.Parse("D"), (count + 24) / 25);
             var provider = new IndicatorProvider(new TimeframeAccessor(1, intraday, new TimeframeCache(intraday, days)));
-            return provider.Resolve(new IndicatorExpression { Indicator = kind }, timeframe).Outputs;
+            var expression = new IndicatorExpression { Indicator = kind };
+            if (kind == IndicatorKind.Count)
+            {
+                expression.Lookback = 3;
+                expression.Predicate = new Condition
+                {
+                    Left = new FieldExpression { Field = Field.Close },
+                    Operator = Operator.GreaterThan,
+                    Right = new NumberExpression { Value = 100m }
+                };
+            }
+            return provider.Resolve(expression, timeframe).Outputs;
         }
     }
 

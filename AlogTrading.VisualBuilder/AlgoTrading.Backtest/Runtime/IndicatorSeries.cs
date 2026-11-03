@@ -15,6 +15,7 @@ public sealed class IndicatorSeries
 
     public int IndexOfOutput(string name)
     {
+        if (name == "PP" && OutputNames.Contains("P")) name = "P";
         for (int i = 0; i < OutputNames.Count; i++)
             if (string.Equals(OutputNames[i], name, StringComparison.Ordinal)) return i;
         return -1;

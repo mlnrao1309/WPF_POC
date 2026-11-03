@@ -24,9 +24,10 @@
     <ProjectReference Include="..\AlgoTrading.Backtest\AlgoTrading.Backtest.csproj" />
     <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
     <ProjectReference Include="..\AlgoTrading.Data\AlgoTrading.Data.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Research\AlgoTrading.Research.csproj" />
   </ItemGroup>
 	<ItemGroup>
-		<None Include="..\Library\appsettings.json" Link="appsettings.json">
+		<None Include="..\appsettings.json" Link="appsettings.json">
       <CopyToOutputDirectory Condition="'$(Configuration)' != 'Release'">PreserveNewest</CopyToOutputDirectory>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>

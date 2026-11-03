@@ -1,16 +1,18 @@
 <Solution>
-  <Project Path="AlgoTrading.Models/AlgoTrading.Models.csproj" />
-  <Project Path="AlgoTrading.Data/AlgoTrading.Data.csproj" />
-  <Project Path="AlgoTrading.Aggregation/AlgoTrading.Aggregation.csproj" />
   <Project Path="../Stage1Scanner.Core/Stage1Scanner.Core.csproj" />
-  <Project Path="AlgoTrading.Backtest/AlgoTrading.Backtest.csproj" />
+  <Project Path="AlgoTrading.Aggregation.Tests/AlgoTrading.Aggregation.Tests.csproj" />
+  <Project Path="AlgoTrading.Aggregation/AlgoTrading.Aggregation.csproj" />
+  <Project Path="AlgoTrading.Backtest.Cli.Tests/AlgoTrading.Backtest.Cli.Tests.csproj" />
   <Project Path="AlgoTrading.Backtest.Cli/AlgoTrading.Backtest.Cli.csproj">
     <BuildType Project="Release" />
   </Project>
-  <Project Path="AlgoTrading.RuleEditor/AlgoTrading.RuleEditor.csproj" />
-  <Project Path="AlgoTrading.Models.Tests/AlgoTrading.Models.Tests.csproj" />
-  <Project Path="AlgoTrading.Data.Tests/AlgoTrading.Data.Tests.csproj" />
-  <Project Path="AlgoTrading.Aggregation.Tests/AlgoTrading.Aggregation.Tests.csproj" />
   <Project Path="AlgoTrading.Backtest.Tests/AlgoTrading.Backtest.Tests.csproj" />
-  <Project Path="AlgoTrading.Backtest.Cli.Tests/AlgoTrading.Backtest.Cli.Tests.csproj" />
+  <Project Path="AlgoTrading.Backtest/AlgoTrading.Backtest.csproj" />
+  <Project Path="AlgoTrading.Data.Tests/AlgoTrading.Data.Tests.csproj" />
+  <Project Path="AlgoTrading.Data/AlgoTrading.Data.csproj" />
+  <Project Path="AlgoTrading.Models.Tests/AlgoTrading.Models.Tests.csproj" />
+  <Project Path="AlgoTrading.Models/AlgoTrading.Models.csproj" />
+  <Project Path="AlgoTrading.Research/AlgoTrading.Research.csproj" Id="c4cf3674-cd4d-462d-b22c-abc3da9262be" />
+  <Project Path="AlgoTrading.RuleEditor/AlgoTrading.RuleEditor.csproj" />
+  <Project Path="AlgoTrading.Research.Tests/AlgoTrading.Research.Tests.csproj" />
 </Solution>

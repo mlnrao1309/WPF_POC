@@ -162,6 +162,33 @@ public sealed class ReplayArtifactGenerator
             });
         }
 
+        // Keep the actual engine evidence; never reconstruct condition decisions in replay.
+        // Chunk records so an artifact payload does not grow with the entire run.
+        if (observations is not null)
+        {
+            var batch = new List<EvaluationTraceRecord>(1024);
+            int part = 0;
+            void Flush()
+            {
+                if (batch.Count == 0) return;
+                artifacts.Add(new ReplayArtifactDto
+                {
+                    ArtifactKind = "ConditionTraces",
+                    ArtifactName = $"{baseSeries.Timeframe}/part-{part++:D6}",
+                    RecordCount = batch.Count,
+                    PayloadText = JsonSerializer.Serialize(new { schemaVersion = 1, runId, traces = batch },
+                        new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase })
+                });
+                batch.Clear();
+            }
+            foreach (var observation in observations)
+                foreach (var trace in observation.Traces)
+                {
+                    batch.Add(trace);
+                    if (batch.Count == 1024) Flush();
+                }
+            Flush();
+        }
         return artifacts;
     }
 

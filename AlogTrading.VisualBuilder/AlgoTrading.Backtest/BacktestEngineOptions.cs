@@ -20,7 +20,9 @@ public sealed class BacktestEngineOptions
     public Guid? RunId { get; init; }
     public IBarSeries? DailySeries { get; init; }
     public IReadOnlyDictionary<Timeframe, IBarSeries>? PreparedSeries { get; init; }
-
-    // NEW: Toggle for detailed CSV tracing
     public bool EnableTracing { get; init; } = false;
+
+    // NEW: If set, the engine calculates indicators from the start of the series,
+    // but only begins evaluating entry/exit signals after this time.
+    public DateTime? TradingStartTime { get; init; }
 }

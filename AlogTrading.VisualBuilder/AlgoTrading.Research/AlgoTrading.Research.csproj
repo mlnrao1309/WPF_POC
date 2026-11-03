@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="RuleStaticAnalyzerTests.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AlgoTrading.Backtest\AlgoTrading.Backtest.csproj" />
+    <ProjectReference Include="..\AlgoTrading.Models\AlgoTrading.Models.csproj" />
+  </ItemGroup>
+
+</Project>
