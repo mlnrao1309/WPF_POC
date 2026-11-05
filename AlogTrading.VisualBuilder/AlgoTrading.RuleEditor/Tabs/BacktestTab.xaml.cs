@@ -45,9 +45,9 @@ public partial class BacktestTab : UserControl
         TokenListBox.ItemsSource = _tokens;
         FromPicker.SelectedDate = DateTime.Today.AddYears(-2);
         ToPicker.SelectedDate = DateTime.Today;
-        _historyRefresh.Tick += OnHistoryRefreshTick;
+        //_historyRefresh.Tick += OnHistoryRefreshTick;
         Loaded += OnHistoryLoaded;
-        Unloaded += OnHistoryUnloaded;
+        //Unloaded += OnHistoryUnloaded;
     }
 
     public void Configure(MainWindow owner, EditorSettings settings,
@@ -60,7 +60,7 @@ public partial class BacktestTab : UserControl
         _queue = new BacktestQueueService(settings.RulesPendingPath, settings.RulesRunningPath);
         _daemon = new DaemonLauncherService(
             settings.CliExecutablePath, settings.ConfigPath, settings.LockPath);
-        RefreshRunList();
+        //RefreshRunList();
     }
 
     public async void RefreshRunList()

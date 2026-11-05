@@ -3,13 +3,13 @@ using System.Collections.Generic;
 
 namespace AlgoTrading.Models.Analysis;
 
-public enum FindingSeverity
-{
-    Blocker,
-    HighReview,
-    Warning,
-    Info
-}
+//public enum FindingSeverity
+//{
+//    Blocker,
+//    HighReview,
+//    Warning,
+//    Info
+//}
 
 public enum FindingCertainty
 {

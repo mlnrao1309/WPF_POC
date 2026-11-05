@@ -4,6 +4,8 @@ using System.Text.Json;
 using System.Security.Cryptography;
 using AlgoTrading.Backtest;
 using AlgoTrading.Backtest.Metrics;
+using AlgoTrading.Backtest.Configs;
+using AlgoTrading.Backtest.Contracts;
 using AlgoTrading.Backtest.Results;
 using AlgoTrading.Backtest.Runtime;
 using AlgoTrading.Data;
@@ -43,9 +45,13 @@ public sealed class BacktestFacade : IBacktestFacade
             var prepared = SqlBarSeries.Prepare(_settings.Data.Sql.ConnectionString, request.InstrumentToken,
                 request.RuleJson, request.FromUtc, request.ToUtc);
             cancellationToken.ThrowIfCancellationRequested();
-            StartRun(request, prepared);
+            decimal startingCapital = CalculateStartingCapital(rule, prepared[rule.BaseTimeframe],
+                ReadConfigOrEmpty(_settings.Configs.CostsPath),
+                ReadConfigOrEmpty(_settings.Configs.SlippagePath),
+                ReadConfigOrEmpty(_settings.Configs.MarginsPath));
+            StartRun(request, prepared, startingCapital);
             historyStarted = true;
-            var result = RunCore(request, rule, prepared, cancellationToken);
+            var result = RunCore(request, rule, prepared, startingCapital, cancellationToken);
             if (!result.Success)
                 FailRun(request.RunId, result.ErrorType + ": " + result.ErrorMessage);
             return result;
@@ -65,7 +71,7 @@ public sealed class BacktestFacade : IBacktestFacade
         }
     }
 
-    private void StartRun(FacadeRequest request, IReadOnlyDictionary<Timeframe, IBarSeries> prepared)
+    private void StartRun(FacadeRequest request, IReadOnlyDictionary<Timeframe, IBarSeries> prepared, decimal startingCapital)
     {
         using var rule = JsonDocument.Parse(request.RuleJson);
         string configuration = JsonSerializer.Serialize(new
@@ -74,7 +80,7 @@ public sealed class BacktestFacade : IBacktestFacade
             rule = rule.RootElement,
             runMode = request.Mode.ToString(),
             engineVersion = EngineInfo.Version,
-            initialCapital = request.TradedCapital,
+            initialCapital = startingCapital,
             lossBasis = request.LossBasis.ToString(),
             dailyLossLimitPercent = 2m,
             monthlyLossLimitPercent = 5m,
@@ -99,7 +105,7 @@ public sealed class BacktestFacade : IBacktestFacade
             _settings.Data.Source, "NextBarOpen/" + executionMode,
             new DateTimeOffset(DateTime.SpecifyKind(request.FromUtc, DateTimeKind.Utc)),
             new DateTimeOffset(DateTime.SpecifyKind(request.ToUtc, DateTimeKind.Utc)),
-            configuration, request.TradedCapital);
+            configuration, startingCapital);
     }
 
     public void CompleteRun(Guid runId, string resultJson, string resultFilePath)
@@ -119,7 +125,7 @@ public sealed class BacktestFacade : IBacktestFacade
     }
 
     private FacadeResult RunCore(FacadeRequest req, RuleDefinition rule,
-        IReadOnlyDictionary<Timeframe, IBarSeries> prepared, CancellationToken ct)
+        IReadOnlyDictionary<Timeframe, IBarSeries> prepared, decimal startingCapital, CancellationToken ct)
     {
         var bars = prepared[rule.BaseTimeframe];
 
@@ -130,7 +136,7 @@ public sealed class BacktestFacade : IBacktestFacade
         {
             EnableTracing = true,
             SignalObserver = observation => { if (recordSignals) signalObservations.Add(observation); },
-            InitialCapital = req.TradedCapital,
+            InitialCapital = startingCapital,
             LossBasis = req.LossBasis,
             RiskFreeRatePercent = _settings.Backtest.RiskFreeRatePercent,
             Quantity = 1,
@@ -193,9 +199,9 @@ public sealed class BacktestFacade : IBacktestFacade
                 Status = RiskAssessmentStatus.NotAssessed,
                 Reason = RiskAssessmentReason.UnsupportedRunMode,
                 LossBasis = req.LossBasis,
-                TradedCapital = req.TradedCapital,
-                DailyLossLimit = req.TradedCapital * 0.02m,
-                MonthlyLossLimit = req.TradedCapital * 0.05m
+                TradedCapital = startingCapital,
+                DailyLossLimit = startingCapital * 0.02m,
+                MonthlyLossLimit = startingCapital * 0.05m
             };
         string resultJson = BacktestResultJson.Serialize(result);
         string tradesCsv = BuildTradesCsv(result.Trades);
@@ -203,6 +209,33 @@ public sealed class BacktestFacade : IBacktestFacade
         var metricsSummary = SelectMetricsSummary(req.Mode, result);
 
         return FacadeResult.Ok(resultJson, tradesCsv, summary, metricsSummary);
+    }
+
+    private static decimal CalculateStartingCapital(RuleDefinition rule, IBarSeries bars,
+        string costsJson, string slippageJson, string marginsJson)
+    {
+        var marginModel = new EquityMarginModel(MarginConfig.Parse(marginsJson));
+        var costModel = new IndianEquityCostModel(CostsConfig.Parse(costsJson));
+        var slippage = SlippageConfig.Parse(slippageJson).Equity;
+        ISlippageModel slippageModel = string.Equals(slippage.Model, "Fixed", StringComparison.OrdinalIgnoreCase)
+            ? new FixedSlippageModel(slippage.FixedAmount)
+            : new SpreadSlippageModel(slippage.SpreadPercent);
+
+        // Fund one trade at any prepared opening price, with a 25% reserve.
+        decimal neededCapital = 0m;
+        foreach (decimal open in bars.Open.Span)
+        {
+            decimal fill = rule.Direction == Direction.Long
+                ? open + slippageModel.Compute(open) : open - slippageModel.Compute(open);
+            decimal entryCosts = costModel.Compute(new TradeExecutionContext
+            {
+                EntryPrice = fill, ExitPrice = 0m, Quantity = 1, Direction = rule.Direction,
+                Mode = rule.ExecutionMode, Scope = TradeCostScope.Entry
+            }).Total;
+            neededCapital = Math.Max(neededCapital,
+                marginModel.Compute(fill, 1, rule.ExecutionMode) + entryCosts);
+        }
+        return Math.Ceiling(neededCapital * 1.25m * 100m) / 100m;
     }
 
     private string ReadConfigOrEmpty(string relativePath)

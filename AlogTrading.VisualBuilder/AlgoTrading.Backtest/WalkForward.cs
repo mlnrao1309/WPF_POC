@@ -43,7 +43,6 @@ public static class WalkForward
         long totalTicks = (to - from).Ticks;
         long holdoutTicks = (long)(totalTicks * config.FinalHoldoutRatio);
 
-        // FIX: Only subtract a tick when an actual holdout is being reserved
         DateTime holdoutStart;
         DateTime tilingEnd;
         if (config.FinalHoldoutRatio > 0 && holdoutTicks > 0)
@@ -53,7 +52,7 @@ public static class WalkForward
         }
         else
         {
-            holdoutStart = to;   // no holdout
+            holdoutStart = to;
             tilingEnd = to;
         }
 

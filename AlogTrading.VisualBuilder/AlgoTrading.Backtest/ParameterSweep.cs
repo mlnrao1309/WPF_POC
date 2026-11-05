@@ -1,16 +1,21 @@
-using System.Text;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Text.Json.Nodes;
 using AlgoTrading.Backtest.Metrics;
 using AlgoTrading.Backtest.Runtime;
 using AlgoTrading.Data;
 using AlgoTrading.Models;
+using System.Text;
 
 namespace AlgoTrading.Backtest;
 
 public static class ParameterSweep
 {
     /// <summary>
-    /// Legacy overload retained only for internal callers that have not yet migrated to bindings.
+    /// Legacy overload retained for internal callers using parameter specs.
     /// </summary>
     public static SweepResult Run(
         RuleDefinition rule,
@@ -24,9 +29,9 @@ public static class ParameterSweep
         return Run(rule, series, options, criterion, bindings, validityCheck: null, maxCombinations, ct);
     }
 
-    public static List<SweepBinding> CreateBindingsFromSpecs(IReadOnlyList<ParameterSpec> specs)
+    public static List<SweepBindingSpec> CreateBindingsFromSpecs(IReadOnlyList<ParameterSpec> specs)
     {
-        var list = new List<SweepBinding>();
+        var list = new List<SweepBindingSpec>();
         foreach (var s in specs)
         {
             var values = new List<decimal>();
@@ -45,17 +50,35 @@ public static class ParameterSweep
                         throw new ArgumentException($"Parameter '{s.Name}' grid exceeds 1,000,000 values; check Step.");
                 }
             }
-            list.Add(new SweepBinding { Name = s.Name, JsonPointer = null, Values = values });
+            list.Add(new SweepBindingSpec { Name = s.Name, JsonPointers = s.Name != null ? new[] { $"/parameters/{s.Name}" } : null, Values = values });
         }
         return list;
     }
-
     public static SweepResult Run(
         RuleDefinition rule,
         IBarSeries series,
         BacktestEngineOptions options,
         SweepCriterion criterion,
         IReadOnlyList<SweepBinding> bindings,
+        Func<RuleDefinition, IEnumerable<string>>? validityCheck,
+        int maxCombinations,
+        CancellationToken ct = default)
+    {
+        var specs = bindings.Select(b => new SweepBindingSpec
+        {
+            Name = b.Name,
+            JsonPointers = b.JsonPointer != null ? new[] { b.JsonPointer } : null,
+            Values = b.Values
+        }).ToList();
+
+        return Run(rule, series, options, criterion, specs, validityCheck, maxCombinations, ct);
+    }
+    public static SweepResult Run(
+        RuleDefinition rule,
+        IBarSeries series,
+        BacktestEngineOptions options,
+        SweepCriterion criterion,
+        IReadOnlyList<SweepBindingSpec> bindings,
         Func<RuleDefinition, IEnumerable<string>>? validityCheck,
         int maxCombinations,
         CancellationToken ct = default)
@@ -68,8 +91,7 @@ public static class ParameterSweep
         if (maxCombinations < 1)
             throw new ArgumentOutOfRangeException(nameof(maxCombinations), "maxCombinations must be >= 1.");
 
-        // --- FIX 1: Validate baseline before enumerating any combination ---
-        // If the baseline rule already fails the correctness gate, no combination can be trusted.
+        // 1. Baseline Validation
         if (validityCheck != null)
         {
             var baselineErrors = validityCheck(rule).ToList();
@@ -90,19 +112,21 @@ public static class ParameterSweep
             }
         }
 
-        var grids = bindings.Select(b => b.Values).ToList();
+        string originalJson = RuleDefinitionJson.Serialize(rule);
+        string originalHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(Encoding.UTF8.GetBytes(originalJson))).ToLowerInvariant();
+        var ruleObj = JsonNode.Parse(originalJson)!.AsObject();
+
+        // 2. Preflight Validation & Pointer Binding Check (M3-03 & M3-06)
+        SidecarBindingValidator.ValidateBindings(ruleObj, bindings);
+        GridPreflightValidator.PreflightGrid(bindings, maxCombinations, series.Count, requiredMaxWarmupBars: 1);
+
+        var grids = bindings.Select(b => b.Values.ToList()).ToList();
         long total = 1L;
-        foreach (var g in grids)
-        {
-            total *= g.Count;
-            if (total > maxCombinations)
-                throw new ArgumentException($"Sweep would generate {total} combinations, exceeding the cap of {maxCombinations}.");
-        }
+        foreach (var g in grids) total *= g.Count;
 
         var combos = new List<decimal[]>((int)total);
         Enumerate(grids, 0, new decimal[grids.Count], combos);
 
-        string frozen = RuleDefinitionJson.Serialize(rule);
         var engine = new BacktestEngine(options);
         var entries = new SweepEntry[combos.Count];
 
@@ -112,75 +136,39 @@ public static class ParameterSweep
             CancellationToken = ct
         };
 
+        // 3. Parallel Execution across Cartesian Tuples (M3-07 & M3-08)
         Parallel.For(0, combos.Count, parallelOptions, idx =>
         {
             ct.ThrowIfCancellationRequested();
 
             try
             {
-                var cloneObj = JsonNode.Parse(frozen)!.AsObject();
+                string candidateId = $"cand_{idx:D4}";
+                var candidateMeta = CandidateMaterializer.Materialize(
+                    originalJson, originalHash, candidateId, bindings, combos[idx], validityCheck);
 
-                for (int i = 0; i < bindings.Count; i++)
+                if (!candidateMeta.IsValid)
                 {
-                    var val = combos[idx][i];
-                    var binding = bindings[i];
-
-                    if (binding.JsonPointer != null)
+                    entries[idx] = new SweepEntry
                     {
-                        ApplyJsonPointer(cloneObj, binding.JsonPointer, val);
-                    }
-                    else
-                    {
-                        if (cloneObj["parameters"] is JsonArray pArr)
-                        {
-                            bool found = false;
-                            foreach (var item in pArr)
-                            {
-                                if (item?["name"]?.GetValue<string>() == binding.Name)
-                                {
-                                    item["default"] = val;
-                                    found = true;
-                                    break;
-                                }
-                            }
-                            if (!found)
-                                throw new InvalidOperationException($"Declared parameter '{binding.Name}' not found in JSON.");
-                        }
-                        else
-                        {
-                            throw new InvalidOperationException($"JSON has no parameters array, cannot bind '{binding.Name}'.");
-                        }
-                    }
+                        Parameters = candidateMeta.BoundParameters,
+                        IsValid = false,
+                        ValidationErrors = candidateMeta.ValidationErrors.ToList()
+                    };
+                    return;
                 }
 
-                var clone = RuleDefinitionJson.Deserialize(cloneObj.ToJsonString());
-
-                if (validityCheck != null)
-                {
-                    var errs = validityCheck(clone).ToList();
-                    if (errs.Count > 0)
-                    {
-                        entries[idx] = new SweepEntry
-                        {
-                            Parameters = BuildParameterDict(bindings, combos[idx]),
-                            IsValid = false,
-                            ValidationErrors = errs
-                        };
-                        return;
-                    }
-                }
-
-                var result = engine.Run(clone, series, ct);
+                // Run trial through unified engine pipeline
+                var result = engine.Run(candidateMeta.ClonedRule, series, ct);
 
                 entries[idx] = new SweepEntry
                 {
-                    Parameters = BuildParameterDict(bindings, combos[idx]),
+                    Parameters = candidateMeta.BoundParameters,
                     Metrics = result.Metrics,
                     CriterionValue = ExtractCriterion(result.Metrics, criterion),
                     IsValid = true
                 };
             }
-            // --- FIX 2: Re-throw cancellation, do not swallow it as a failed trial ---
             catch (OperationCanceledException) { throw; }
             catch (Exception ex)
             {
@@ -193,7 +181,7 @@ public static class ParameterSweep
             }
         });
 
-        // --- FIX 3: Deterministic tie-break using sorted key=value pairs, not Dictionary.ToString() ---
+        // 4. Deterministic Ranking & Tie-Breaking
         Array.Sort(entries, (a, b) =>
         {
             if (a.IsValid != b.IsValid) return a.IsValid ? -1 : 1;
@@ -220,69 +208,13 @@ public static class ParameterSweep
         => string.Join("|", p.OrderBy(x => x.Key, StringComparer.Ordinal)
                               .Select(x => $"{x.Key}={x.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}"));
 
-    private static void ApplyJsonPointer(JsonNode root, string pointer, decimal value)
-    {
-        var tokens = DecodePointer(pointer);
-        JsonNode? current = root;
-
-        for (int i = 0; i < tokens.Length - 1; i++)
-        {
-            if (current is JsonObject obj)
-            {
-                if (!obj.TryGetPropertyValue(tokens[i], out var next) || next is null)
-                    throw new InvalidOperationException($"JSON pointer '{pointer}' navigates missing property '{tokens[i]}'.");
-                current = next;
-            }
-            else if (current is JsonArray arr && int.TryParse(tokens[i], out int idx))
-            {
-                if (idx < 0 || idx >= arr.Count)
-                    throw new InvalidOperationException($"JSON pointer '{pointer}' array index '{tokens[i]}' out of range.");
-                current = arr[idx];
-            }
-            else
-            {
-                throw new InvalidOperationException($"JSON pointer '{pointer}' cannot traverse {current?.GetType().Name ?? "null"} at '{tokens[i]}'.");
-            }
-        }
-
-        var lastToken = tokens[^1];
-        if (current is JsonObject parentObj)
-        {
-            // --- FIX 4: Replace requires existing property; no silent add ---
-            if (!parentObj.ContainsKey(lastToken))
-                throw new InvalidOperationException($"JSON pointer '{pointer}' targets missing property '{lastToken}'.");
-            parentObj[lastToken] = JsonValue.Create(value);
-        }
-        else if (current is JsonArray parentArr && int.TryParse(lastToken, out int arrIdx))
-        {
-            if (arrIdx < 0 || arrIdx >= parentArr.Count)
-                throw new InvalidOperationException($"JSON pointer '{pointer}' array index '{lastToken}' out of range.");
-            parentArr[arrIdx] = JsonValue.Create(value);
-        }
-        else
-        {
-            throw new InvalidOperationException($"JSON pointer '{pointer}' cannot be assigned at '{lastToken}'.");
-        }
-    }
-
-    // RFC 6901 unescape: ~1 -> /, ~0 -> ~
-    private static string[] DecodePointer(string pointer)
-    {
-        if (string.IsNullOrEmpty(pointer) || pointer[0] != '/')
-            throw new InvalidOperationException($"JSON pointer '{pointer}' must start with '/'.");
-        return pointer.TrimStart('/')
-            .Split('/')
-            .Select(seg => seg.Replace("~1", "/").Replace("~0", "~"))
-            .ToArray();
-    }
-
     private static void Enumerate(List<List<decimal>> grids, int depth, decimal[] current, List<decimal[]> output)
     {
         if (depth == grids.Count) { output.Add((decimal[])current.Clone()); return; }
         foreach (var v in grids[depth]) { current[depth] = v; Enumerate(grids, depth + 1, current, output); }
     }
 
-    private static Dictionary<string, decimal> BuildParameterDict(IReadOnlyList<SweepBinding> bindings, decimal[] values)
+    private static Dictionary<string, decimal> BuildParameterDict(IReadOnlyList<SweepBindingSpec> bindings, decimal[] values)
     {
         var d = new Dictionary<string, decimal>(bindings.Count, StringComparer.Ordinal);
         for (int i = 0; i < bindings.Count; i++) d[bindings[i].Name] = values[i];
